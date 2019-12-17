@@ -15,7 +15,7 @@ from collections import deque
 
 # from basic_nlp_models import BasicNLPModel
 # from models.encoder import Encoder, ClassificationEncoder
-from datasets.beer_dataset_single_aspect import BeerDatasetBinarySingleAspect, BeerDatasetBinarySingleAspectWithTest
+from beer_dataset_single_aspect import BeerDatasetBinarySingleAspect, BeerDatasetBinarySingleAspectWithTest
 # from models.base_classification_models import BasicClassificationModel, SingleHeadAttentionModel
 # from models.base_classification_models import BasicAttentionModel, IntraAttentionModel
 # from models.rationale_sentence_classification_models import HardRationaleClassificationModel
@@ -78,7 +78,7 @@ class Argument():
         self.fine_tuning = False
         self.z_dim = 2
         self.gumbel_temprature = 0.1
-        self.cuda = True
+        self.cuda = False
         self.batch_size = 40
         self.mlp_hidden_dim = 50
         self.dropout_rate = 0.4
@@ -214,7 +214,7 @@ if args.pre_train_cls:
     dev_cls_accs = [0.0]
     test_accs = [0.0]
     best_dev_acc = 0.0
-    num_iteration = 20000
+    num_iteration = 1
     display_iteration = 400
     test_iteration = 400
 
