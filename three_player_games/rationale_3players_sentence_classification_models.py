@@ -14,13 +14,13 @@ import copy
 
 # from basic_nlp_models import BasicNLPModel
 # from models.encoder import Encoder, ClassificationEncoder
-from models.rnn_model import RnnModel
-from models.generator import Generator, DepGenerator
+from rnn_model import RnnModel
+from generator import Generator, DepGenerator
 
-from utils.utils import single_regularization_loss_batch, bao_regularization_hinge_loss_batch
-from utils.utils import bao_regularization_loss_batch, count_regularization_loss_batch
-from utils.utils import count_regularization_hinge_loss_batch
-from utils.utils import bao_regularization_hinge_loss_batch_with_none_loss
+from utils import single_regularization_loss_batch, bao_regularization_hinge_loss_batch
+from utils import bao_regularization_loss_batch, count_regularization_loss_batch
+from utils import count_regularization_hinge_loss_batch
+from utils import bao_regularization_hinge_loss_batch_with_none_loss
 
 from collections import deque
 
