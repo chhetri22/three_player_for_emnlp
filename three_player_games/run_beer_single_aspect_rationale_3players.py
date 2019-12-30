@@ -466,10 +466,10 @@ for i in tqdm(range(num_iteration)):
     # calculate classification accuarcy
     _, y_pred = torch.max(predict, dim=1)
     
-    acc = np.float((y_pred == batch_y_).sum().cpu().data[0]) / args.batch_size
+    acc = np.float((y_pred == batch_y_).sum().cpu().data) / args.batch_size
     train_accs.append(acc)
 
-    train_losses.append(losses['e_loss'][0])
+    train_losses.append(losses['e_loss'])
     
     if args.fixed_E_anti == True:
         new_E_anti_weights = classification_model.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
