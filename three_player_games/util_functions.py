@@ -307,10 +307,10 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
               'sparsity_loss:', torch.mean(sparsity_loss).cpu().data[0],
               'continuity_loss:', torch.mean(continuity_loss).cpu().data[0])
     if not eval_test:
-        print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count
+        print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
     else:
-        print 'test:', dev_accs[-1], 'best test:', best_dev_acc, 'anti test acc:', dev_anti_accs[-1], 'cls test acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count        
-    print 'sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count
+        print('test:', dev_accs[-1], 'best test:', best_dev_acc, 'anti test acc:', dev_anti_accs[-1], 'cls test acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
+    print('sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count)
         
     return best_dev_acc
 
@@ -398,8 +398,8 @@ def evaluate_rationale_model_glue_for_acl_with_test(classification_model, beer_d
         print('train:', train_accs[-1], 'consistency_loss:', torch.mean(consistency_loss).cpu().data[0], 
               'sparsity_loss:', torch.mean(sparsity_loss).cpu().data[0],
               'continuity_loss:', torch.mean(continuity_loss).cpu().data[0])
-    print 'dev:', dev_accs[-1], 'test:', test_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'anti test acc:', test_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count
-    print 'sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count
+    print('dev:', dev_accs[-1], 'test:', test_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'anti test acc:', test_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
+    print('sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count)
         
     return best_dev_acc
 
@@ -537,8 +537,8 @@ def predict_rationale_model_glue_for_acl(classification_model, beer_data, args, 
         else:
             test_accs.append(dev_correct / dev_total)
 
-    print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count
-    print 'sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count
+    print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
+    print('sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count)
         
     return best_dev_acc, outputs_rationale, outputs_non_rationale, outputs_full
 
@@ -634,10 +634,10 @@ def evaluate_introspection_model_glue_for_acl(classification_model, beer_data, a
               'sparsity_loss:', torch.mean(sparsity_loss).cpu().data[0],
               'continuity_loss:', torch.mean(continuity_loss).cpu().data[0])
     if not eval_test:
-        print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count
+        print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
     else:
-        print 'test:', dev_accs[-1], 'best test:', best_dev_acc, 'anti test acc:', dev_anti_accs[-1], 'cls test acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count        
-    print 'sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count
+        print('test:', dev_accs[-1], 'best test:', best_dev_acc, 'anti test acc:', dev_anti_accs[-1], 'cls test acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
+    print('sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count)
         
     return best_dev_acc
 
@@ -734,8 +734,8 @@ def predict_introspection_model_glue_for_acl(classification_model, beer_data, ar
         else:
             test_accs.append(dev_correct / dev_total)
 
-    print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count
-    print 'sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count
+    print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count, 'continuity:', continuity_total / dev_count)
+    print('sparsity count:', sparsity_count_total / dev_count, 'continuity count:', continuity_count_total / dev_count)
         
     return best_dev_acc, outputs_rationale, outputs_non_rationale, outputs_full
 
@@ -833,8 +833,8 @@ def evaluate_model(classification_model, beer_data, args, dev_accs, dev_anti_acc
         print('train:', train_accs[-1], 'consistency_loss:', torch.mean(consistency_loss).cpu().data[0], 
               'sparsity_loss:', torch.mean(sparsity_loss).cpu().data[0],
               'continuity_loss:', torch.mean(continuity_loss).cpu().data[0])
-    print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count
-    print 'dev reward:', dev_rewards[-1], 'best dev reward:', best_dev_reward, 'sparsity:', sparsity_total / dev_count
+    print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count)
+    print('dev reward:', dev_rewards[-1], 'best dev reward:', best_dev_reward, 'sparsity:', sparsity_total / dev_count)
 
     eval_sets = ['eval']
 
@@ -911,11 +911,11 @@ def evaluate_model(classification_model, beer_data, args, dev_accs, dev_anti_acc
 #     else:
 #         print 'highlighted:', z_predict, 'correct:', z_correct, 'precision:', z_correct/z_predict
         
-    print 'dev:', eval_accs[-1], 'sparsity:', sparsity_total / dev_count
+    print('dev:', eval_accs[-1], 'sparsity:', sparsity_total / dev_count)
     if z_predict == 0.0:
-        print 'highlighted:', z_predict, 'correct:', z_predict, 'precision:', z_predict, 'recall:', z_predict
+        print('highlighted:', z_predict, 'correct:', z_predict, 'precision:', z_predict, 'recall:', z_predict)
     else:
-        print 'highlighted:', z_predict, 'correct:', z_correct, 'precision:', z_correct/z_predict, 'recall:', z_correct/z_total
+        print('highlighted:', z_predict, 'correct:', z_correct, 'precision:', z_correct/z_predict, 'recall:', z_correct/z_total)
         
     return best_dev_acc, best_dev_reward
 

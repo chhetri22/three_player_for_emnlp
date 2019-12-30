@@ -48,14 +48,14 @@ class TextDataset(object):
                 data = line.strip().split(" ")
                 word = data[0].strip()
                 embedding = data[1::]
-                embedding = map(np.float32, embedding)
+                embedding = list(map(np.float32, embedding))
                 if word in self.word_vocab:
                     embeddings[self.word_vocab[word], :] = embedding
                     counter += 1
             f.close()
-            print "%d words has been switched." %counter            
+            print("%d words has been switched."%counter)
         else:
-            print "embedding is initialized fully randomly."
+            print("embedding is initialized fully randomly.")
             
         return embeddings
     
@@ -228,7 +228,7 @@ class SentenceClassificationSet(object):
             
     def print_info(self):
         for k, v in self.label2instance_dict.items():
-            print 'Number of instances with label%d:'%k, len(v)
+            print('Number of instances with label%d:'%k, len(v))
 
 
 class SentenceClassification(TextDataset):
@@ -241,7 +241,7 @@ class SentenceClassification(TextDataset):
         self.word_vocab = {'<PAD>':0, '<START>':1, '<END>':2, '<UNK>':3}
         self.label_vocab = {}
         self.load_dataset()
-        print 'Converting text to word indicies.'
+        print('Converting text to word indicies.')
         self.idx_2_word = self._index_to_word()
         
         
@@ -328,7 +328,7 @@ class SentenceClassification(TextDataset):
         for data_id, data_set in self.data_sets.items():
             data_set.pairs = _numeralize_pairs(word_freq_dict, data_set.get_pairs())
 
-        print 'size of the final vocabulary:', len(self.word_vocab)
+        print('size of the final vocabulary:', len(self.word_vocab))
         
         
     def _get_word_freq(self, data_sets_):
@@ -351,7 +351,7 @@ class SentenceClassification(TextDataset):
                 sentence = pair_dict['sentence']
                 _add_freq_from_sentence(word_freq_dict, sentence)
 
-        print 'size of the raw vocabulary:', len(word_freq_dict)
+        print('size of the raw vocabulary:', len(word_freq_dict))
         return word_freq_dict
     
     
@@ -499,7 +499,7 @@ class BeerDatasetBinary(SentenceClassification):
             negative_pairs -- a list of negative question-passage pairs
         """
         
-        print 'loading evaluation set: %s'%fpath
+        print('loading evaluation set: %s'%fpath)
         
         data_set = SentenceClassificationSet()
         
@@ -944,22 +944,21 @@ if __name__ == "__main__":
         disease_data = RelationClassification(data_dir)
 
         x_mat, y_vec, e_mat, x_mask, pos_e1_mat, pos_e2_mat  = disease_data.get_batch('dev', range(2), sort=False)
-        print y_vec
-        print x_mask
-        print x_mat[1]
-        print 'e_mat', e_mat
-        print disease_data.label_vocab
+        print(x_mask)
+        print(y_vec)
+        print(x_mat[1])
+        print('e_mat', e_mat)
+        print(disease_data.label_vocab)
         disease_data.display_sentence(x_mat[0])
         disease_data.display_sentence(x_mat[1])
 
-        print x_mat
-        print x_mask
-
-        print e_mat
-        print pos_e1_mat
-        print pos_e2_mat
-        print pos_e1_mat - 5
-        print pos_e2_mat - 5
+        print(x_mat)
+        print(x_mask)
+        print(e_mat)
+        print(pos_e1_mat)
+        print(pos_e2_mat)
+        print(pos_e1_mat - 5)
+        print(pos_e2_mat - 5)
     elif test_case == 'beer': 
         data_dir = "/dccstor/yum-dbqa/Rationale/deep-rationalization/beer_review/"
 
@@ -967,12 +966,12 @@ if __name__ == "__main__":
 
 #         x_mat, y_vec, x_mask = beer_data.get_batch('dev', range(2), sort=False)
         x_mat, y_vec, z_mat, x_mask = beer_data.get_eval_batch(range(2), sort=False)
-        print y_vec
+        print(y_vec)
 #         print x_mask
-        print x_mat[1]
-        print z_mat[1]
+        print(x_mat[1])
+        print(z_mat[1])
 
-        print beer_data.label_vocab
+        print(beer_data.label_vocab)
         beer_data.display_sentence(x_mat[0])
         beer_data.display_sentence(x_mat[1])
         
