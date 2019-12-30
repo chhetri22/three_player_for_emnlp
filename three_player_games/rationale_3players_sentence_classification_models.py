@@ -432,9 +432,9 @@ class HardIntrospection3PlayerClassificationModel(HardRationale3PlayerClassifica
         super(HardIntrospection3PlayerClassificationModel, self).__init__(embeddings, args)
         
         self.fixed_classifier = args.fixed_classifier
-        print 'fixed classifier: ', self.fixed_classifier
+        print('fixed classifier: ', self.fixed_classifier)
         self.fixed_E_anti = args.fixed_E_anti
-        print 'fixed E_anti: ', self.fixed_E_anti
+        print('fixed E_anti: ', self.fixed_E_anti)
         self.lambda_acc_gap = args.lambda_acc_gap
         
         self.generator = IntrospectionGeneratorModule(args)

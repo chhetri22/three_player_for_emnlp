@@ -365,12 +365,12 @@ if __name__ == "__main__":
 
         x_mat, y_vec, x_mask = beer_data.get_batch('dev', range(2), sort=False)
 #         x_mat, y_vec, z_mat, x_mask = beer_data.get_eval_batch(range(2), sort=False)
-        print y_vec
+        print(y_vec)
 #         print x_mask
-        print x_mat[1]
+        print(x_mat[1])
 #         print z_mat[1]
 
-        print beer_data.label_vocab
+        print(beer_data.label_vocab)
         beer_data.display_sentence(x_mat[0])
         beer_data.display_sentence(x_mat[1])
         

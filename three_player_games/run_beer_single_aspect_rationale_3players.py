@@ -11,6 +11,7 @@ from torch.autograd import Variable
 import numpy as np
 import copy, random, sys, os
 from collections import deque
+import importlib
 # from models.models import CnnModel, RnnModel
 
 # from basic_nlp_models import BasicNLPModel
@@ -116,7 +117,7 @@ class Argument():
 
 args = Argument()
 args_dict = vars(args)
-print vars(args)
+print(vars(args))
 # embedding_size = 100
 
 # TODO: handle save/load vocab here, for saving vocab, use the following, for loading, load embedding from checkpoint
@@ -126,8 +127,8 @@ embeddings = beer_data.initial_embedding(args.embedding_dim, embedding_path)
 # embeddings = np.load('beer_single_aspect.embedding.npy')
 
 args.num_labels = len(beer_data.label_vocab)
-print 'num_labels: ', args.num_labels
-print beer_data.idx2label
+print('num_labels: ', args.num_labels)
+print(beer_data.idx2label)
 
 
 # In[ ]:
@@ -135,8 +136,8 @@ print beer_data.idx2label
 # args.lm_setting = 'single'
 # args.game_mode = 'taos'
 # args.cuda = False
-reload(sys.modules['rationale_3players_for_emnlp'])
-reload(sys.modules['util_functions'])
+importlib.reload(sys.modules['rationale_3players_for_emnlp'])
+importlib.reload(sys.modules['util_functions'])
 from rationale_3players_for_emnlp import HardRationale3PlayerClassificationModelForEmnlp
 from util_functions import copy_classifier_module, evaluate_rationale_model_glue_for_acl
 
@@ -145,7 +146,7 @@ classification_model = HardRationale3PlayerClassificationModelForEmnlp(embedding
 if args.cuda:
     classification_model.cuda()
 
-print classification_model
+print(classification_model)
 
 if 'count_tokens' in args_dict and 'count_pieces' in args_dict:
     classification_model.count_tokens = args.count_tokens
@@ -186,7 +187,7 @@ if args.load_pre_cls:
     
     copy_classifier_module(classification_model.C_model, snapshot_path_enc, snapshot_path_pred)
 
-    print classification_model
+    print(classification_model)
 if args.load_pre_gen:
     print('loading pre-trained the GEN+CLS')
     snapshot_path_gen = os.path.join(args.working_dir, args.model_prefix + '.train_gen.pt')
@@ -298,7 +299,7 @@ if args.pre_train_cls:
                     test_accs.append(dev_correct / dev_total)
 
             print('train:', train_accs[-1])
-            print 'dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count
+            print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count)
                 
 
 
@@ -400,7 +401,7 @@ classification_model.fixed_E_anti = args.fixed_E_anti
 args.with_lm = False
 args.lambda_lm = 1.0
 
-print 'training with game mode:', classification_model.game_mode
+print('training with game mode:', classification_model.game_mode)
 
 train_losses = []
 train_accs = []
@@ -429,7 +430,7 @@ classification_model.init_reward_queue()
 
 old_E_anti_weights = classification_model.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
 
-for i in tqdm(xrange(num_iteration)):
+for i in tqdm(range(num_iteration)):
     classification_model.train()
 #     supervise_optimizer.zero_grad()
 #     rl_optimizer.zero_grad()
@@ -475,9 +476,9 @@ for i in tqdm(xrange(num_iteration)):
         assert (old_E_anti_weights == new_E_anti_weights).all(), 'E anti model changed'
     
     if (i+1) % display_iteration == 0:
-        print 'sparsity lambda: %.4f'%(classification_model.lambda_sparsity)
-        print 'highlight percentage: %.4f'%(classification_model.highlight_percentage)
-        print 'supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'][0], torch.mean(sparsity_loss).cpu().data[0], torch.mean(continuity_loss).cpu().data[0])
+        print('sparsity lambda: %.4f'%(classification_model.lambda_sparsity))
+        print('highlight percentage: %.4f'%(classification_model.highlight_percentage))
+        print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'][0], torch.mean(sparsity_loss).cpu().data[0], torch.mean(continuity_loss).cpu().data[0]))
         if args.with_lm:
             print('lm prob: %.4f'%losses['lm_prob'][0])
 #             print('lm prob: %.4f'%np.tanh(losses['lm_prob'][0]))
@@ -491,7 +492,7 @@ for i in tqdm(xrange(num_iteration)):
 
         z_b = torch.zeros_like(z)
         z_b_ = z_b.cpu().data[2,:]
-        print 'gold label:', beer_data.idx2label[y_], 'pred label:', beer_data.idx2label[pred_]
+        print('gold label:', beer_data.idx2label[y_], 'pred label:', beer_data.idx2label[pred_])
         beer_data.display_example(x_, z_)
 
     if (i+1) % test_iteration == 0:

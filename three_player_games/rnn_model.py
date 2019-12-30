@@ -91,7 +91,7 @@ class RnnModel(nn.Module):
         
         if mask is not None:
             seq_lengths = list(torch.sum(mask, dim=1).cpu().data.numpy())
-            seq_lengths = map(int, seq_lengths)
+            seq_lengths = list(map(int, seq_lengths))
             inputs_ = torch.nn.utils.rnn.pack_padded_sequence(embeddings_, seq_lengths)
         else:
             inputs_ = embeddings_
