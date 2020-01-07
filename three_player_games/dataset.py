@@ -12,7 +12,6 @@ import numpy as np
 from colored import fg, attr, bg
 import json
 
-
 # In[ ]:
 
 
@@ -103,9 +102,9 @@ class TextDataset(object):
             word = self.idx_2_word[word_index]
             if display_flag:
                 output_word = "%s %s%s" %(fg(1), word, attr(0))
-                sys.stdout.write(output_word.encode('utf-8'))                
+                sys.stdout.write(output_word)                
             else:
-                sys.stdout.write(" " + word.encode('utf-8'))
+                sys.stdout.write(" " + word)
         sys.stdout.flush()
 
 
