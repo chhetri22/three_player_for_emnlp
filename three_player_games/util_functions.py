@@ -244,7 +244,7 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
 
         num_dev_instance = beer_data.data_sets[set_name].size()
 
-        for start in range(num_dev_instance / args.batch_size):
+        for start in range(num_dev_instance // args.batch_size):
             x_mat, y_vec, x_mask = beer_data.get_batch(set_name, batch_idx=range(start * args.batch_size, (start + 1) * args.batch_size), 
                                              sort=True)
 
@@ -265,9 +265,9 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
             _, anti_y_pred = torch.max(anti_predict, dim=1)
             _, y_cls_pred = torch.max(cls_predict, dim=1)
 
-            dev_correct += np.float((y_pred == batch_y_).sum().cpu().data[0])
-            dev_anti_correct += np.float((anti_y_pred == batch_y_).sum().cpu().data[0])
-            dev_cls_correct += np.float((y_cls_pred == batch_y_).sum().cpu().data[0])
+            dev_correct += np.float((y_pred == batch_y_).sum().cpu().data.item())
+            dev_anti_correct += np.float((anti_y_pred == batch_y_).sum().cpu().data.item())
+            dev_cls_correct += np.float((y_cls_pred == batch_y_).sum().cpu().data.item())
             dev_total += args.batch_size
 
             if len(z.shape) == 3:

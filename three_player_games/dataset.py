@@ -42,7 +42,7 @@ class TextDataset(object):
         embeddings[0, :] = np.zeros(embedding_size, dtype=np.float32)
 
         if embedding_path and os.path.isfile(embedding_path):
-            f = open(embedding_path, "r")
+            f = open(embedding_path, "r", encoding="utf8")
             counter = 0
             for line in f:
                 data = line.strip().split(" ")
@@ -103,9 +103,9 @@ class TextDataset(object):
             word = self.idx_2_word[word_index]
             if display_flag:
                 output_word = "%s %s%s" %(fg(1), word, attr(0))
-                sys.stdout.write(output_word.encode('utf-8'))                
+                sys.stdout.write(output_word)                
             else:
-                sys.stdout.write(" " + word.encode('utf-8'))
+                sys.stdout.write(" " + word)
         sys.stdout.flush()
 
 

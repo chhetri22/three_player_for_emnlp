@@ -215,9 +215,9 @@ if args.pre_train_cls:
     dev_cls_accs = [0.0]
     test_accs = [0.0]
     best_dev_acc = 0.0
-    num_iteration = 1
-    display_iteration = 400
-    test_iteration = 400
+    num_iteration = 2
+    display_iteration = 1
+    test_iteration = 1
 
     eval_accs = [0.0]
     eval_anti_accs = [0.0]
@@ -413,9 +413,9 @@ test_anti_accs = [0.0]
 test_cls_accs = [0.0]
 best_dev_acc = 0.0
 best_test_acc = 0.0
-num_iteration = 40000
-display_iteration = 400
-test_iteration = 400
+num_iteration = 2
+display_iteration = 1
+test_iteration = 1
 
 eval_accs = [0.0]
 eval_anti_accs = [0.0]
@@ -478,12 +478,12 @@ for i in tqdm(range(num_iteration)):
     if (i+1) % display_iteration == 0:
         print('sparsity lambda: %.4f'%(classification_model.lambda_sparsity))
         print('highlight percentage: %.4f'%(classification_model.highlight_percentage))
-        print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'][0], torch.mean(sparsity_loss).cpu().data[0], torch.mean(continuity_loss).cpu().data[0]))
+        print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'].item(), torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
         if args.with_lm:
             print('lm prob: %.4f'%losses['lm_prob'][0])
 #             print('lm prob: %.4f'%np.tanh(losses['lm_prob'][0]))
         y_ = y_vec[2]
-        pred_ = y_pred.data[2]
+        pred_ = y_pred.data[2].data.item()
         x_ = x_mat[2,:]
         if len(z.shape) == 3:
             z_ = z.cpu().data[2,pred_,:]
