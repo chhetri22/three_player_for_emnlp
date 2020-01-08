@@ -42,7 +42,7 @@ def display_example(dataset, x, z=None, threshold=0.9):
             sys.stdout.write(" " + word.decode('utf-8'))
     sys.stdout.flush()
 
-data_dir = "C:\\Users\\v-yohwa\sentiment_dataset\data"
+data_dir = os.path.join("..", "datasets", "sst2")
 beer_data = Sst2Dataset(data_dir)
 
 
@@ -57,7 +57,7 @@ class Argument():
         self.fine_tuning = False
         self.z_dim = 2
         self.gumbel_temprature = 0.1
-        self.cuda = False
+        self.cuda = True
         self.batch_size = 40
         self.mlp_hidden_dim = 50
         self.dropout_rate = 0.4

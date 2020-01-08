@@ -115,7 +115,7 @@ if __name__ == "__main__":
     test_case = 'sst2'
     
     if test_case == 'sst2': 
-        data_dir = "C:\\Users\\v-yohwa\sentiment_dataset\data"
+        data_dir = os.path.join("..", "datasets", "sst2")
 
         sst2_data = Sst2Dataset(data_dir)
 
