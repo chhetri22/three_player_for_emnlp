@@ -10,7 +10,7 @@ import copy, random, sys, os
 from collections import deque
 import importlib
 
-from beer_dataset_single_aspect import BeerDatasetBinarySingleAspect, BeerDatasetBinarySingleAspectWithTest
+from sst2_dataset import Sst2Dataset
 from rationale_3players_for_emnlp import HardRationale3PlayerClassificationModelForEmnlp
 from tqdm import tqdm
 
@@ -42,8 +42,9 @@ def display_example(dataset, x, z=None, threshold=0.9):
             sys.stdout.write(" " + word.decode('utf-8'))
     sys.stdout.flush()
 
-data_dir = "../data/"
-beer_data = BeerDatasetBinarySingleAspectWithTest(data_dir, score_threshold=0.6, split_ratio=0.1)
+data_dir = "C:\\Users\\v-yohwa\sentiment_dataset\data"
+beer_data = Sst2Dataset(data_dir)
+
 
 class Argument():
     def __init__(self):
@@ -137,17 +138,12 @@ eval_anti_accs = [0.0]
 args.load_pre_cls = False
 args.load_pre_gen = False
 
-# snapshot_path = os.path.join(args.working_dir, args.pre_trained_model_prefix + '.pt')
-# classification_model = torch.load(snapshot_path)
-
 classification_model.init_C_model()
 
 if args.load_pre_cls:
     print('loading pre-trained the CLS')
     snapshot_path_enc = os.path.join(args.working_dir, args.pre_trained_model_prefix + '.encoder.tmp.pt')
-    # torch.save(classification_model.generator.Classifier_enc, snapshot_path_enc)
     snapshot_path_pred = os.path.join(args.working_dir, args.pre_trained_model_prefix + '.predictor.tmp.pt')
-    # torch.save(classification_model.generator.Classifier_pred, snapshot_path_pred)
 
     copy_classifier_module(classification_model.E_model, snapshot_path_enc, snapshot_path_pred)
     copy_classifier_module(classification_model.E_anti_model, snapshot_path_enc, snapshot_path_pred)

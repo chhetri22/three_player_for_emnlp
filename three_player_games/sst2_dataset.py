@@ -66,6 +66,7 @@ class Sst2Dataset(SentenceClassification):
         # filein.close()
         
         self.data_sets = {}
+        self.label_vocab = {0:0, 1:1}
 
         # print('splitting with %.2f'%self.split_ratio)
         self.data_sets['train'] = self._load_data_set(os.path.join(self.data_dir, 'stsa.binary.train'))
@@ -104,7 +105,7 @@ class Sst2Dataset(SentenceClassification):
                 label = int(line[label_idx])
                 sentence = line[sentence_start:self.truncate_num + sentence_start]
 
-                data_set.add_one(sentence, label)
+                data_set.add_one(sentence.split(" "), label)
             
         data_set.print_info()
 
@@ -114,7 +115,7 @@ if __name__ == "__main__":
     test_case = 'sst2'
     
     if test_case == 'sst2': 
-        data_dir = "C:\\Users\\v-kedere\maidap\sentiment_dataset\data"
+        data_dir = "C:\\Users\\v-yohwa\sentiment_dataset\data"
 
         sst2_data = Sst2Dataset(data_dir)
 
@@ -122,7 +123,7 @@ if __name__ == "__main__":
         print(y_vec)
         print(x_mat[1])
 
-        print(sst2_data.label_vocab)
+        print("label vocab: ", sst2_data.label_vocab)
         sst2_data.display_sentence(x_mat[0])
         sst2_data.display_sentence(x_mat[1])
 
