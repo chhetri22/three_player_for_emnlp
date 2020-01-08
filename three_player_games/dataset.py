@@ -12,7 +12,6 @@ import numpy as np
 from colored import fg, attr, bg
 import json
 
-
 # In[ ]:
 
 

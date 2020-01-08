@@ -215,7 +215,7 @@ if args.pre_train_cls:
     dev_cls_accs = [0.0]
     test_accs = [0.0]
     best_dev_acc = 0.0
-    num_iteration = 2
+    num_iteration = 100
     display_iteration = 1
     test_iteration = 1
 
@@ -266,7 +266,7 @@ if args.pre_train_cls:
 
                 num_dev_instance = beer_data.data_sets[set_name].size()
 
-                for start in range(num_dev_instance / args.batch_size):
+                for start in range(num_dev_instance // args.batch_size):
                     x_mat, y_vec, x_mask = beer_data.get_batch(set_name, batch_idx=range(start * args.batch_size, (start + 1) * args.batch_size), 
                                                      sort=True)
 
@@ -413,7 +413,7 @@ test_anti_accs = [0.0]
 test_cls_accs = [0.0]
 best_dev_acc = 0.0
 best_test_acc = 0.0
-num_iteration = 2
+num_iteration = 100
 display_iteration = 1
 test_iteration = 1
 
@@ -478,12 +478,12 @@ for i in tqdm(range(num_iteration)):
     if (i+1) % display_iteration == 0:
         print('sparsity lambda: %.4f'%(classification_model.lambda_sparsity))
         print('highlight percentage: %.4f'%(classification_model.highlight_percentage))
-        print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'].item(), torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
+        print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
         if args.with_lm:
             print('lm prob: %.4f'%losses['lm_prob'][0])
 #             print('lm prob: %.4f'%np.tanh(losses['lm_prob'][0]))
         y_ = y_vec[2]
-        pred_ = y_pred.data[2].data.item()
+        pred_ = y_pred.data[2].item()
         x_ = x_mat[2,:]
         if len(z.shape) == 3:
             z_ = z.cpu().data[2,pred_,:]
