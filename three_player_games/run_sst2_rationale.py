@@ -14,6 +14,8 @@ from sst2_dataset import Sst2Dataset
 from rationale_3players_for_emnlp import HardRationale3PlayerClassificationModelForEmnlp
 from tqdm import tqdm
 
+from datetime import datetime
+
 from util_functions import copy_classifier_module, evaluate_rationale_model_glue_for_acl
 
 torch.manual_seed(9527)
@@ -92,6 +94,10 @@ class Argument():
                                                                              self.highlight_percentage, 
                                                                              self.lambda_continuity)
         self.pre_trained_model_prefix = 'pre_trained_cls.model'
+
+        self.save_path = os.path.join("..", "models")
+        self.model_prefix = "sst2rnpmodel"
+        self.save_best_model = True
 
 args = Argument()
 args_dict = vars(args)
@@ -353,7 +359,18 @@ for i in tqdm(range(num_iteration)):
 
         if new_best_dev_acc > best_dev_acc:
             best_dev_acc = new_best_dev_acc
-
+        
+        print("TEST ACC:", new_best_test_acc, best_test_acc)
         if new_best_test_acc > best_test_acc:
             best_test_acc = new_best_test_acc
+
+            if args.save_best_model:
+                print("saving best model")
+                now = datetime.now()
+                current_time = now.strftime("%H_%M_%S")
+                torch.save(classification_model.state_dict(), os.path.join(args.save_path,
+                    args.model_prefix, current_time, ".pth"))
+                
+
+
 
