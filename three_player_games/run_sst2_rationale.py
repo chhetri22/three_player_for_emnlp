@@ -105,7 +105,7 @@ print(vars(args))
 # embedding_size = 100
 
 # TODO: handle save/load vocab here, for saving vocab, use the following, for loading, load embedding from checkpoint
-embedding_path = "../data/glove.6B.100d.txt"
+embedding_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
 # embedding_path = '/dccstor/yum-dbqa/pyTorch/ProNet_MTL/sentiment_analysis/glove.840B.300d.txt'
 embeddings = beer_data.initial_embedding(args.embedding_dim, embedding_path)
 # embeddings = np.load('beer_single_aspect.embedding.npy')
@@ -369,7 +369,7 @@ for i in tqdm(range(num_iteration)):
                 now = datetime.now()
                 current_time = now.strftime("%H_%M_%S")
                 torch.save(classification_model.state_dict(), os.path.join(args.save_path,
-                    args.model_prefix, current_time, ".pth"))
+                    args.model_prefix + current_time + ".pth"))
                 
 
 
