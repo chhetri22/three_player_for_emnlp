@@ -69,7 +69,9 @@ class Sst2Dataset(SentenceClassification):
         self.label_vocab = {0:0, 1:1}
 
         # print('splitting with %.2f'%self.split_ratio)
-        self.data_sets['train'] = self._load_data_set(os.path.join(self.data_dir, 'stsa.binary.train'))
+        train_phrases = os.path.join(self.data_dir, 'stsa.binary.phrases.train')
+        train_sentences = os.path.join(self.data_dir, 'stsa.binary.train')
+        self.data_sets['train'] = self._load_shuffle_data_sets([train_phrases, train_sentences])
         self.data_sets['dev'] = self._load_data_set(os.path.join(self.data_dir, 'stsa.binary.dev'))
         
         # load dev
@@ -107,6 +109,37 @@ class Sst2Dataset(SentenceClassification):
 
                 data_set.add_one(sentence.split(" "), label)
             
+        data_set.print_info()
+
+        return data_set
+
+    def _load_shuffle_data_sets(self, fpaths, with_dev=False):
+        """
+        Inputs: 
+            fpaths -- paths to the files containing training data. 
+        Outputs:
+            positive_pairs -- a list of positive question-passage pairs
+            negative_pairs -- a list of negative question-passage pairs
+        """
+        
+        if with_dev:
+            data_set = SentenceClassificationSetSubSampling()
+        else:
+            data_set = SentenceClassificationSet()
+        
+        label_idx = 0
+        sentence_start = 2
+
+        for fpath in fpaths:
+            with open(os.path.join(fpath), 'r') as f:
+                for line in f:
+                    label = int(line[label_idx])
+                    sentence = line[sentence_start:self.truncate_num + sentence_start]
+
+                    data_set.add_one(sentence.split(" "), label)
+            
+        # randomize order of dataset entries
+        random.shuffle(data_set.instances)
         data_set.print_info()
 
         return data_set
