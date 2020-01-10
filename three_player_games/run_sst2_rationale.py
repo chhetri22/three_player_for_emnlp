@@ -105,7 +105,7 @@ print(vars(args))
 # embedding_size = 100
 
 # TODO: handle save/load vocab here, for saving vocab, use the following, for loading, load embedding from checkpoint
-embedding_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+embedding_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
 # embedding_path = '/dccstor/yum-dbqa/pyTorch/ProNet_MTL/sentiment_analysis/glove.840B.300d.txt'
 embeddings = beer_data.initial_embedding(args.embedding_dim, embedding_path)
 # embeddings = np.load('beer_single_aspect.embedding.npy')
@@ -162,7 +162,7 @@ if args.load_pre_gen:
     snapshot_path_gen = os.path.join(args.working_dir, args.model_prefix + '.train_gen.pt')
     classification_model = torch.load(snapshot_path_gen)
     
-args.pre_train_cls = False
+args.pre_train_cls = True
 
 if args.pre_train_cls:
     print('pre-training the classifier')
@@ -182,7 +182,7 @@ if args.pre_train_cls:
 
     classification_model.init_optimizers()
 
-    for i in tqdm(xrange(num_iteration)):
+    for i in tqdm(range(num_iteration)):
         classification_model.train()
 
         # sample a batch of data
@@ -201,7 +201,7 @@ if args.pre_train_cls:
         # calculate classification accuarcy
         _, y_pred = torch.max(predict, dim=1)
 
-        acc = np.float((y_pred == batch_y_).sum().cpu().data[0]) / args.batch_size
+        acc = np.float((y_pred == batch_y_).sum().cpu().data.item()) / args.batch_size
         train_accs.append(acc)
 
         if (i+1) % test_iteration == 0:
@@ -241,7 +241,7 @@ if args.pre_train_cls:
                     # calculate classification accuarcy
                     _, y_pred = torch.max(predict, dim=1)
 
-                    dev_correct += np.float((y_pred == batch_y_).sum().cpu().data[0])
+                    dev_correct += np.float((y_pred == batch_y_).sum().cpu().data.item())
                     dev_total += args.batch_size
 
                     dev_count += args.batch_size
