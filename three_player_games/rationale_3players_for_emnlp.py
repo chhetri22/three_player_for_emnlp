@@ -73,8 +73,8 @@ def count_regularization_baos_for_both(z, count_tokens, count_pieces, mask=None)
 
 class HardRationale3PlayerClassificationModelForEmnlp(HardRationale3PlayerClassificationModel):
     
-    def __init__(self, embeddings, args):
-        super(HardRationale3PlayerClassificationModelForEmnlp, self).__init__(embeddings, args)
+    def __init__(self, embedding_func, args):
+        super(HardRationale3PlayerClassificationModelForEmnlp, self).__init__(embedding_func, args)
         self.game_mode = args.game_mode
         self.ngram = args.ngram
         
@@ -143,7 +143,7 @@ class HardRationale3PlayerClassificationModelForEmnlp(HardRationale3PlayerClassi
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
         """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         z = torch.ones_like(x).type(torch.cuda.FloatTensor)
         
@@ -161,7 +161,7 @@ class HardRationale3PlayerClassificationModelForEmnlp(HardRationale3PlayerClassi
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
         """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         neg_inf = -1.0e6
         

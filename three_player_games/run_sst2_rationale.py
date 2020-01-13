@@ -68,7 +68,7 @@ class Argument():
         self.pos_embedding_dim = -1
         self.fixed_classifier = True
         self.fixed_E_anti = True
-        self.lambda_sparsity = 1.0
+        self.lambda_sparsity = 3.0
         self.lambda_continuity = 1.0
         self.lambda_anti = 1.0
         self.lambda_pos_reward = 0.1

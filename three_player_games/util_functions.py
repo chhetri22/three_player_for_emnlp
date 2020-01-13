@@ -223,8 +223,8 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
     eval_sets = ['dev']
     if eval_test:
         eval_sets = ['test']
-    for set_id, set_name in enumerate(eval_sets):
         output = ''
+    for set_id, set_name in enumerate(eval_sets):
         output2 = ''
         start_id = 8001
         dev_correct = 0.0
@@ -266,6 +266,7 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
             _, y_cls_pred = torch.max(cls_predict, dim=1)
 
             dev_correct += np.float((y_pred == batch_y_).sum().cpu().data.item())
+            # print("DEV CORRECT:", dev_correct)
             dev_anti_correct += np.float((anti_y_pred == batch_y_).sum().cpu().data.item())
             dev_cls_correct += np.float((y_cls_pred == batch_y_).sum().cpu().data.item())
             dev_total += args.batch_size
@@ -295,8 +296,10 @@ def evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args,
             dev_accs.append(dev_correct / dev_total)
             dev_anti_accs.append(dev_anti_correct / dev_total)
             dev_cls_accs.append(dev_cls_correct / dev_total)
-            if dev_correct / dev_total > best_dev_acc and sparsity_total / dev_count < args.highlight_percentage + 0.05:
-                best_dev_acc = dev_correct / dev_total
+            # print("SPARSITY TOTAL THING:", sparsity_total / dev_count < args.highlight_percentage + 0.05)
+            # if dev_correct / dev_total > best_dev_acc and sparsity_total / dev_count < args.highlight_percentage + 0.05:
+            
+            best_dev_acc = dev_correct / dev_total
 #             test_accs.append(dev_correct / dev_total)
 #             test_anti_accs.append(dev_anti_correct / dev_total)
 #             dev_cls_accs.append(dev_cls_correct / dev_total)
@@ -622,8 +625,8 @@ def evaluate_introspection_model_glue_for_acl(classification_model, beer_data, a
             dev_accs.append(dev_correct / dev_total)
             dev_anti_accs.append(dev_anti_correct / dev_total)
             dev_cls_accs.append(dev_cls_correct / dev_total)
-            if dev_correct / dev_total > best_dev_acc and sparsity_total / dev_count < args.highlight_percentage + 0.05:
-                best_dev_acc = dev_correct / dev_total
+            # if dev_correct / dev_total > best_dev_acc and sparsity_total / dev_count < args.highlight_percentage + 0.05:
+            best_dev_acc = dev_correct / dev_total
 #             test_accs.append(dev_correct / dev_total)
 #             test_anti_accs.append(dev_anti_correct / dev_total)
 #             dev_cls_accs.append(dev_cls_correct / dev_total)

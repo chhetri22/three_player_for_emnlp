@@ -161,8 +161,8 @@ class Rationale3PlayerMatchingModel(nn.Module):
         
         self.NEG_INF = -1.0e6
                     
-        self.vocab_size, self.embedding_dim = embeddings.shape
-        self.embed_layer = self._create_embed_layer(embeddings)
+        # self.vocab_size, self.embedding_dim = embeddings.shape
+        # self.embed_layer = self._create_embed_layer(embeddings)
         
         self.num_labels = args.num_labels
         self.hidden_dim = args.hidden_dim
@@ -176,11 +176,11 @@ class Rationale3PlayerMatchingModel(nn.Module):
         self.loss_func = nn.CrossEntropyLoss()
         
         
-    def _create_embed_layer(self, embeddings):
-        embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
-        embed_layer.weight.data = torch.from_numpy(embeddings)
-        embed_layer.weight.requires_grad = self.args.fine_tuning
-        return embed_layer
+    # def _create_embed_layer(self, embeddings):
+    #     embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
+    #     embed_layer.weight.data = torch.from_numpy(embeddings)
+    #     embed_layer.weight.requires_grad = self.args.fine_tuning
+    #     return embed_layer
         
     def forward(self, x, mask):
         pass

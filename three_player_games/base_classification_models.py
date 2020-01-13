@@ -64,15 +64,16 @@ class StackedCnnModel(nn.Module):
 
 class BasicClassificationModel(nn.Module):
     
-    def __init__(self, embeddings, args):
+    def __init__(self, embedding_func, args):
         super(BasicClassificationModel, self).__init__()
         self.args = args
         self.pos_embedding_dim = args.pos_embedding_dim
         self.model_type = args.model_type
                     
-        self.vocab_size, self.embedding_dim = embeddings.shape
-        self.embed_layer = self._create_embed_layer(embeddings)
-        
+        # self.vocab_size, self.embedding_dim = embeddings.shape
+        # self.embed_layer = self._create_embed_layer(embeddings)
+        self.embedding_func = embedding_func
+
         if args.pos_embedding_dim > 0:
             self.pos_embed_layer = self._create_pos_embed_layer()
         
@@ -105,11 +106,11 @@ class BasicClassificationModel(nn.Module):
         
         self.loss_func = nn.CrossEntropyLoss()
 
-    def _create_embed_layer(self, embeddings):
-        embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
-        embed_layer.weight.data = torch.from_numpy(embeddings)
-        embed_layer.weight.requires_grad = self.args.fine_tuning
-        return embed_layer
+    # def _create_embed_layer(self, embeddings):
+    #     embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
+    #     embed_layer.weight.data = torch.from_numpy(embeddings)
+    #     embed_layer.weight.requires_grad = self.args.fine_tuning
+    #     return embed_layer
     
     
     def _create_pos_embed_layer(self):
@@ -128,7 +129,7 @@ class BasicClassificationModel(nn.Module):
         Outputs:
             predict -- (batch_size, num_label)
         """
-        embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         if self.pos_embedding_dim > 0:
             pos_embeddings = self.pos_embed_layer(e) #(batch_size, length, 3)
@@ -302,9 +303,10 @@ class BasicAttentionModel(nn.Module):
         super(BasicAttentionModel, self).__init__()
         self.args = args
                     
-        self.vocab_size, self.embedding_dim = embeddings.shape
-        self.embed_layer = self._create_embed_layer(embeddings)
-        
+        # self.vocab_size, self.embedding_dim = embeddings.shape
+        # self.embed_layer = self._create_embed_layer(embeddings)
+        self.embedding_func = embeddings
+
         self.num_labels = args.num_labels
         self.hidden_dim = args.hidden_dim
         self.mlp_hidden_dim = args.mlp_hidden_dim #50
@@ -320,11 +322,11 @@ class BasicAttentionModel(nn.Module):
         
         self.loss_func = nn.CrossEntropyLoss()
 
-    def _create_embed_layer(self, embeddings):
-        embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
-        embed_layer.weight.data = torch.from_numpy(embeddings)
-        embed_layer.weight.requires_grad = self.args.fine_tuning
-        return embed_layer
+    # def _create_embed_layer(self, embeddings):
+    #     embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
+    #     embed_layer.weight.data = torch.from_numpy(embeddings)
+    #     embed_layer.weight.requires_grad = self.args.fine_tuning
+    #     return embed_layer
             
     def forward(self, x, mask):
         """
@@ -335,7 +337,7 @@ class BasicAttentionModel(nn.Module):
         Outputs:
             predict -- (batch_size, (1 + num_negative_sample)) classification prediction
         """
-        embed = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        embed = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         # get rationales
         hiddens1, hiddens2 = self.encoder(embed, mask) #(batch_size, hidden_dim, sequence_length) 

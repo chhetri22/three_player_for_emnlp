@@ -180,7 +180,7 @@ class IntrospectionGeneratorModule(nn.Module):
 
 class Rationale3PlayerClassificationModel(nn.Module):
     
-    def __init__(self, embeddings, args):
+    def __init__(self, embedding_func, args):
         super(Rationale3PlayerClassificationModel, self).__init__()
         self.args = args
         
@@ -191,10 +191,9 @@ class Rationale3PlayerClassificationModel(nn.Module):
         self.lambda_anti = args.lambda_anti
         
         self.NEG_INF = -1.0e6
-                    
-        self.vocab_size, self.embedding_dim = embeddings.shape
-        self.embed_layer = self._create_embed_layer(embeddings)
         
+        self.embedding_func = embedding_func
+
         self.num_labels = args.num_labels
         self.hidden_dim = args.hidden_dim
         self.mlp_hidden_dim = args.mlp_hidden_dim #50
@@ -207,11 +206,11 @@ class Rationale3PlayerClassificationModel(nn.Module):
         self.loss_func = nn.CrossEntropyLoss()
         
         
-    def _create_embed_layer(self, embeddings):
-        embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
-        embed_layer.weight.data = torch.from_numpy(embeddings)
-        embed_layer.weight.requires_grad = self.args.fine_tuning
-        return embed_layer
+    # def _create_embed_layer(self, embeddings):
+    #     embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
+    #     embed_layer.weight.data = torch.from_numpy(embeddings)
+    #     embed_layer.weight.requires_grad = self.args.fine_tuning
+    #     return embed_layer
         
     def forward(self, x, e, mask):
         pass
@@ -253,7 +252,7 @@ class HardRationale3PlayerClassificationModel(Rationale3PlayerClassificationMode
         self.C_model = ClassifierModule(self.args)
         
     def get_C_model_pred(self, x, mask):
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         z_ones = torch.ones_like(x).type(torch.cuda.FloatTensor)
         cls_predict = self.C_model(word_embeddings, z_ones, mask)
         return cls_predict
@@ -358,7 +357,7 @@ class HardRationale3PlayerClassificationModel(Rationale3PlayerClassificationMode
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
         """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         neg_inf = -1.0e6
         
@@ -470,7 +469,7 @@ class HardIntrospection3PlayerClassificationModel(HardRationale3PlayerClassifica
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
         """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         z_scores_, cls_predict = self.generator(word_embeddings, mask)
         
@@ -491,7 +490,7 @@ class HardIntrospection3PlayerClassificationModel(HardRationale3PlayerClassifica
         
         self.opt_G_sup.zero_grad()
         
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        word_embeddings = self.embedding_func(x) #(batch_size, length, embedding_dim)
         
         cls_hiddens = self.generator.Classifier_enc(word_embeddings, mask) # (batch_size, hidden_dim, sequence_length)
         max_cls_hidden = torch.max(cls_hiddens + (1 - mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
