@@ -9,6 +9,7 @@ import numpy as np
 import copy, random, sys, os
 from collections import deque
 import importlib
+import logging
 
 from sst2_dataset import Sst2Dataset
 from rationale_3players_for_emnlp import HardRationale3PlayerClassificationModelForEmnlp
@@ -105,7 +106,7 @@ print(vars(args))
 # embedding_size = 100
 
 # TODO: handle save/load vocab here, for saving vocab, use the following, for loading, load embedding from checkpoint
-embedding_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
+embedding_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
 # embedding_path = '/dccstor/yum-dbqa/pyTorch/ProNet_MTL/sentiment_analysis/glove.840B.300d.txt'
 embeddings = beer_data.initial_embedding(args.embedding_dim, embedding_path)
 # embeddings = np.load('beer_single_aspect.embedding.npy')
@@ -365,11 +366,18 @@ for i in tqdm(range(num_iteration)):
             best_test_acc = new_best_test_acc
 
             if args.save_best_model:
-                print("saving best model")
+                print("saving best model and model stats")
                 now = datetime.now()
-                current_time = now.strftime("%H_%M_%S")
+                current_datetime = now.strftime("%m_%d_%y_%H_%M_%S")
                 torch.save(classification_model.state_dict(), os.path.join(args.save_path,
-                    args.model_prefix + current_time + ".pth"))
+                    args.model_prefix + current_datetime + ".pth"))
+                log_filepath = os.path.join(args.save_path, args.model_prefix + current_datetime + "_stats.txt")
+                logging.basicConfig(filename=log_filepath, filemode='a', level=logging.INFO)
+                logging.info('train acc: %.4f'%train_accs[-1])
+                logging.info('sparsity lambda: %.4f'%(classification_model.lambda_sparsity))
+                logging.info('highlight percentage: %.4f'%(classification_model.highlight_percentage))
+                logging.info('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
+                logging.info('dev acc: %.4f, best dev acc: %.4f, anti dev acc: %.4f, cls dev acc: %.4f'%(dev_accs[-1],  best_dev_acc, dev_anti_accs[-1], dev_cls_accs[-1]))
                 
 
 
