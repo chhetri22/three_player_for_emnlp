@@ -50,7 +50,7 @@ beer_data = Sst2Dataset(data_dir)
 
 
 class Argument():
-    def __init__(self, lambda_sparsity = 1.0):
+    def __init__(self):
         self.model_type = 'RNN'
         self.cell_type = 'GRU'
         self.hidden_dim = 400
@@ -69,7 +69,7 @@ class Argument():
         self.pos_embedding_dim = -1
         self.fixed_classifier = True
         self.fixed_E_anti = True
-        self.lambda_sparsity = lambda_sparsity
+        self.lambda_sparsity = 1.0
         self.lambda_continuity = 1.0
         self.lambda_anti = 1.0
         self.lambda_pos_reward = 0.1
@@ -101,9 +101,13 @@ class Argument():
         self.save_best_model = True
 
 lambda_sparsity_vals = [5, 25, 50, 100, 1000, 10000]
+args = Argument()
+current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
+log_filepath = os.path.join(args.save_path, args.model_prefix + current_datetime + "_paramsearch_log.txt")
+logging.basicConfig(filename=log_filepath, level=logging.INFO)
 
 for lambda_sparsity_val in lambda_sparsity_vals:
-    args = Argument(lambda_sparsity = lambda_sparsity_val)
+    args.lambda_sparsity = float(lambda_sparsity_val)
     args_dict = vars(args)
     print(vars(args))
     # embedding_size = 100
@@ -279,8 +283,8 @@ for lambda_sparsity_val in lambda_sparsity_vals:
     best_dev_acc = 0.0
     best_test_acc = 0.0
     num_iteration = 80000
-    display_iteration = 100
-    test_iteration = 100
+    display_iteration = 10
+    test_iteration = 10
 
     eval_accs = [0.0]
     eval_anti_accs = [0.0]
@@ -358,11 +362,11 @@ for lambda_sparsity_val in lambda_sparsity_vals:
             new_best_dev_acc = evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args, dev_accs, dev_anti_accs, dev_cls_accs, best_dev_acc, print_train_flag=False)
             
             new_best_test_acc = evaluate_rationale_model_glue_for_acl(classification_model, beer_data, args, test_accs, test_anti_accs, test_cls_accs, best_test_acc, print_train_flag=False, eval_test=True)
+            print("NEW BEST vs OLD BEST TEST ACC:", new_best_test_acc, best_test_acc)
 
             if new_best_dev_acc > best_dev_acc:
                 best_dev_acc = new_best_dev_acc
             
-            print("TEST ACC:", new_best_test_acc, best_test_acc)
             if new_best_test_acc > best_test_acc:
                 best_test_acc = new_best_test_acc
 
@@ -372,10 +376,10 @@ for lambda_sparsity_val in lambda_sparsity_vals:
                     current_time = now.strftime("%m_%d_%y_%H_%M_%S")
                     torch.save(classification_model.state_dict(), os.path.join(args.save_path,
                         args.model_prefix + current_time + ".pth"))
-                    log_filepath = os.path.join(args.save_path, args.model_prefix + current_time + "_stats.txt")
-                    logging.basicConfig(filename=log_filepath, filemode='a', level=logging.INFO)
-                    logging.info('train acc: %.4f'%train_accs[-1])
+                    logging.info('best model stats @ time ' + current_time)
                     logging.info('sparsity lambda: %.4f'%(classification_model.lambda_sparsity))
+                    logging.info('train acc: %.4f'%train_accs[-1])
+                    logging.info('test acc: %.4f'%new_best_test_acc)
                     logging.info('highlight percentage: %.4f'%(classification_model.highlight_percentage))
                     logging.info('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
                     logging.info('dev acc: %.4f, best dev acc: %.4f, anti dev acc: %.4f, cls dev acc: %.4f'%(dev_accs[-1],  best_dev_acc, dev_anti_accs[-1], dev_cls_accs[-1]))
