@@ -161,7 +161,6 @@ class Generator(nn.Module):
             self.generator_model = RnnModel(args, input_dim)
         self.output_layer = nn.Linear(args.hidden_dim, self.z_dim)
         
-        
     def forward(self, x, mask=None):
         """
         Given input x in shape of (batch_size, sequence_length) generate a 
@@ -439,107 +438,103 @@ class ThreePlayerModel(nn.Module):
 
         return predict
 
-    
-    # new methods
-    def pretrain_classifier(self, data, batch_size, num_iteration=2000, display_iteration=10, test_iteration=10):
-        train_accs = []
-        dev_accs = [0.0]
-        dev_anti_accs = [0.0]
-        dev_cls_accs = [0.0]
-        test_accs = [0.0]
-        best_dev_acc = 0.0
+    #new methods
 
-        self.init_optimizers() # ?? do we have to do this here?
+    def generate_data(self, batch):
+        # sort for rnn happiness
+        batch.sort_values("counts", inplace=True, ascending=False)
+        
+        x_mask = np.stack(batch["mask"], axis=0)
+        # drop all zero columns
+        zero_col_idxs = np.argwhere(np.all(x_mask[...,:] == 0, axis=0))
+        x_mask = np.delete(x_mask, zero_col_idxs, axis=1)
 
-        for i in tqdm(range(num_iteration)):
-            self.train() # pytorch fn; sets module to train mode
+        x_mat = np.stack(batch["tokens"], axis=0)
+        # drop all zero columns
+        x_mat = np.delete(x_mat, zero_col_idxs, axis=1)
 
-            # sample a batch of data
-            x_mat, y_vec, x_mask = data.get_train_batch(batch_size=batch_size, sort=True)
+        y_vec = np.stack(batch["label"], axis=0)
+        
+        batch_x_ = Variable(torch.from_numpy(x_mat)).to(torch.int64)
+        batch_m_ = Variable(torch.from_numpy(x_mask)).type(torch.FloatTensor)
+        batch_y_ = Variable(torch.from_numpy(y_vec)).to(torch.int64)
 
-            batch_x_ = Variable(torch.from_numpy(x_mat))
-            batch_m_ = Variable(torch.from_numpy(x_mask)).type(torch.FloatTensor)
-            batch_y_ = Variable(torch.from_numpy(y_vec))
-            if self.args.cuda:
-                batch_x_ = batch_x_.cuda()
-                batch_m_ = batch_m_.cuda()
-                batch_y_ = batch_y_.cuda()
+        if args.cuda:
+            batch_x_ = batch_x_.cuda()
+            batch_m_ = batch_m_.cuda()
+            batch_y_ = batch_y_.cuda()
 
-            losses, predict = self.train_cls_one_step(batch_x_, batch_y_, batch_m_)
+        return batch_x_, batch_m_, batch_y_
 
-            # calculate classification accuarcy
-            _, y_pred = torch.max(predict, dim=1)
+    def _get_sparsity(self, z, mask):
+        mask_z = z * mask
+        seq_lengths = torch.sum(mask, dim=1)
 
-            acc = np.float((y_pred == batch_y_).sum().cpu().data[0]) / batch_size
-            train_accs.append(acc)
+        sparsity_ratio = torch.sum(mask_z, dim=-1) / seq_lengths #(batch_size,)
+    #     sparsity_count = torch.sum(mask_z, dim=-1)
 
-            if (i+1) % test_iteration == 0:
-                self.eval() # set module to eval mode
-                eval_sets = ['dev']
-                for set_name in (eval_sets):
-                    dev_correct = 0.0
-                    dev_anti_correct = 0.0
-                    dev_cls_correct = 0.0
-                    dev_total = 0.0
-                    sparsity_total = 0.0
-                    dev_count = 0
+        return sparsity_ratio
 
-                    num_dev_instance = data.data_sets[set_name].size()
+    def _get_continuity(self, z, mask):
+        mask_z = z * mask
+        seq_lengths = torch.sum(mask, dim=1)
+        
+        mask_z_ = torch.cat([mask_z[:, 1:], mask_z[:, -1:]], dim=-1)
+            
+        continuity_ratio = torch.sum(torch.abs(mask_z - mask_z_), dim=-1) / seq_lengths #(batch_size,) 
+    #     continuity_count = torch.sum(torch.abs(mask_z - mask_z_), dim=-1)
+        
+        return continuity_ratio
 
-                    for start in range(num_dev_instance // args.batch_size):
-                        x_mat, y_vec, x_mask = data.get_batch(set_name, batch_idx=range(start * batch_size, (start + 1) * args.batch_size), 
-                                                         sort=True)
+    def display_example(self, x, m, z):
+        seq_len = int(m.sum().item())
+        ids = x[:seq_len]
+        tokens = self.convert_ids_to_tokens_glove(ids)
 
-                        batch_x_ = Variable(torch.from_numpy(x_mat))
-                        batch_m_ = Variable(torch.from_numpy(x_mask)).type(torch.FloatTensor)
-                        batch_y_ = Variable(torch.from_numpy(y_vec))
-                        if self.args.cuda:
-                            batch_x_ = batch_x_.cuda()
-                            batch_m_ = batch_m_.cuda()
-                            batch_y_ = batch_y_.cuda()
+        final = ""
+        for i in range(len(m)):
+            if z[i]:
+                final += "[" + tokens[i] + "]"
+            else:
+                final += tokens[i]
+            final += " "
+        print(final)
 
-                        predict = self.forward_cls(batch_x_, batch_m_)
+    def convert_ids_to_tokens_glove(self, ids):
+        return [reverse_word_vocab[i.item()] for i in ids]
 
-                        # calculate classification accuarcy
-                        _, y_pred = torch.max(predict, dim=1)
+    def test(self):
+        self.eval()
+        
+        test_size = 200
+        
+        test_batch = df_test.sample(test_size)
+        batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+        predict, anti_predict, z, neg_log_probs = self.forward(batch_x_, batch_m_)
+        
+        # do a softmax on the predicted class probabilities
+        _, y_pred = torch.max(predict, dim=1)
+        _, anti_y_pred = torch.max(anti_predict, dim=1)
+        
+        # calculate sparsity
+        print("Test sparsity: ", self._get_sparsity(z, batch_m_).sum().item() / batch_size)
+        
+        accuracy = (y_pred == batch_y_).sum().item() / test_size
+        anti_accuracy = (anti_y_pred == batch_y_).sum().item() / test_size
+        print("Test accuracy: ", accuracy, "% Anti-accuracy: ", anti_accuracy)
 
-                        dev_correct += np.float((y_pred == batch_y_).sum().cpu().data[0])
-                        dev_total += batch_size
+        # display an example
+        print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
+        self.display_example(batch_x_[0], batch_m_[0], z[0])
 
-                        dev_count += batch_size
-
-                    if set_name == 'dev':
-                        dev_accs.append(dev_correct / dev_total)
-                        dev_anti_accs.append(dev_anti_correct / dev_total)
-                        dev_cls_accs.append(dev_cls_correct / dev_total)
-                        if dev_correct / dev_total > best_dev_acc:
-                            best_dev_acc = dev_correct / dev_total
-
-                    else:
-                        test_accs.append(dev_correct / dev_total)
-
-                print('train:', train_accs[-1])
-                print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count)
-
-    def fit(self, data, batch_size, num_iteration=8000, display_iteration=10, test_iteration=10):
+    def fit(self, df_train, batch_size, num_iteration=8000, display_iteration=10, test_iteration=10):
         print('training with game mode:', classification_model.game_mode)
         train_losses = []
         train_accs = []
-        dev_accs = [0.0]
-        dev_anti_accs = [0.0]
-        dev_cls_accs = [0.0]
-        test_accs = [0.0]
-        test_anti_accs = [0.0]
-        test_cls_accs = [0.0]
-        best_dev_acc = 0.0
-        best_test_acc = 0.0
-        num_iteration = 100
+
+        num_iteration = 20000
         display_iteration = 1
-        test_iteration = 1
-
-        eval_accs = [0.0]
-        eval_anti_accs = [0.0]
-
+        test_iteration = 50
         
         self.init_optimizers()
         self.init_rl_optimizers()
@@ -549,57 +544,24 @@ class ThreePlayerModel(nn.Module):
         z_history_rewards = deque(maxlen=queue_length)
         z_history_rewards.append(0.)
 
-        
         for i in tqdm(range(num_iteration)):
             self.train()
-            x_mat, y_vec, x_mask = data.get_train_batch(batch_size=batch_size, sort=True)
         
-        batch_x_ = Variable(torch.from_numpy(x_mat))
-        batch_m_ = Variable(torch.from_numpy(x_mask)).type(torch.FloatTensor)
-        batch_y_ = Variable(torch.from_numpy(y_vec))
-        z_baseline = Variable(torch.FloatTensor([float(np.mean(z_history_rewards))]))
+            # sample a batch of data
+            batch = df_train.sample(batch_size, replace=True)
+            batch_x_, batch_m_, batch_y_ = self.generate_data(batch)
 
-        if self.args.cuda:
-            batch_x_ = batch_x_.cuda()
-            batch_m_ = batch_m_.cuda()
-            batch_y_ = batch_y_.cuda()
-            z_baseline = z_baseline.cuda()
-        
-        losses, predict, anti_predict, z, z_rewards, continuity_loss, sparsity_loss = classification_model.train_one_step(\
-            batch_x_, batch_y_, z_baseline, batch_m_)
-        
-        # calculate classification accuarcy
-        _, y_pred = torch.max(predict, dim=1)
+            losses, predict = classification_model.train_cls_one_step(batch_x_, batch_y_, batch_m_)
 
-        acc = np.float((y_pred == batch_y_).sum().cpu().data) / batch_size
-        train_accs.append(acc)
+            # calculate classification accuarcy
+            _, y_pred = torch.max(predict, dim=1)
 
-        train_losses.append(losses['e_loss'])
-        
-        if args.fixed_E_anti:
-            new_E_anti_weights = classification_model.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
-            assert (old_E_anti_weights == new_E_anti_weights).all(), 'E anti model changed'
-        
-        if (i+1) % display_iteration == 0:
-            print('sparsity lambda: %.4f'%(self.lambda_sparsity))
-            print('highlight percentage: %.4f'%(self.highlight_percentage))
-            print('supervised_loss %.4f, sparsity_loss %.4f, continuity_loss %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
-            if args.with_lm:
-                print('lm prob: %.4f'%losses['lm_prob'][0])
-            y_ = y_vec[2]
-            pred_ = y_pred.data[2].item()
-            x_ = x_mat[2,:]
-            if len(z.shape) == 3:
-                z_ = z.cpu().data[2,pred_,:]
-            else:
-                z_ = z.cpu().data[2,:]
+            acc = np.float((y_pred == batch_y_).sum().cpu().data.item()) / args.batch_size
+            train_accs.append(acc)
 
-            z_b = torch.zeros_like(z)
-            z_b_ = z_b.cpu().data[2,:]
-            print('gold label:', data.idx2label[y_], 'pred label:', data.idx2label[pred_])
-            data.display_example(x_, z_)
-        
-        # TODO: replace test iteration block
+            if i % test_iteration == 0:
+                self.test()
+
 
 class Argument():
     def __init__(self):
@@ -660,6 +622,107 @@ if __name__=="__main__":
     pre_train_cls = False
     num_labels = 2
 
+    glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+    COUNT_THRESH = 3
+    DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
+    LABEL_COL = "label"
+    TEXT_COL = "sentence"
+    TOKEN_CUTOFF = 50
+
+    def generate_tokens_glove(word_vocab, text):
+        indexed_text = [word_vocab[word] if (counts[word] > COUNT_THRESH) else word_vocab["<UNK>"] for word in text.split()]
+        pad_length = TOKEN_CUTOFF - len(indexed_text)
+        mask = [1] * len(indexed_text) + [0] * pad_length
+        
+        indexed_text = indexed_text + [word_vocab["<PAD>"]] * pad_length
+        
+        return np.array(indexed_text), np.array(mask)
+
+    def get_all_tokens_glove(data):
+        l = []
+        m = []
+        counts = []
+        for sentence in data:
+            token_list, mask = generate_tokens_glove(word_vocab, sentence)
+            l.append(token_list)
+            m.append(mask)
+            counts.append(np.sum(mask))
+        tokens = pd.DataFrame({"tokens": l, "mask": m, "counts": counts})
+        return tokens
+
+    def build_vocab(df):
+        d = {"<PAD>":0, "<UNK>":1}
+        counts = {}
+        for i in range(len(df)):
+            sentence = df.iloc[i][TEXT_COL]
+            for word in sentence.split():
+                if word not in d:
+                    d[word] = len(d)
+                    counts[word] = 1
+                else:
+                    counts[word] += 1
+        reverse_d = {v: k for k, v in d.items()}
+        return d, reverse_d, counts
+
+    def initial_embedding(word_vocab, embedding_size, embedding_path=None): 
+        vocab_size = len(word_vocab)
+        # initialize a numpy embedding matrix 
+        
+        embeddings = 0.1*np.random.randn(vocab_size, embedding_size).astype(np.float32)
+        
+        # replace the <PAD> embedding by all zero
+        embeddings[0, :] = np.zeros(embedding_size, dtype=np.float32)
+
+        if embedding_path and os.path.isfile(embedding_path):
+            f = open(embedding_path, "r", encoding="utf8")
+            counter = 0
+            for line in f:
+                data = line.strip().split(" ")
+                word = data[0].strip()
+                embedding = data[1::]
+                embedding = list(map(np.float32, embedding))
+                if word in word_vocab:
+                    embeddings[word_vocab[word], :] = embedding
+                    counter += 1
+            f.close()
+            print("%d words has been switched."%counter)
+        else:
+            print("embedding is initialized fully randomly.")
+
+        return embeddings
+
+    def load_data(fpath):
+        df_dict = {LABEL_COL: [], TEXT_COL: []}
+        with open(fpath, 'r') as f:
+            label_start = 0
+            sentence_start = 2
+            for line in f:
+                label = int(line[label_start])
+                sentence = line[sentence_start:]
+                df_dict[LABEL_COL].append(label)
+                df_dict[TEXT_COL].append(sentence)
+        return pd.DataFrame.from_dict(df_dict)
+
+
+    df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.train'))
+    df_test = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test'))
+    # TODO combine train and test dataset into df_all
+    df_all = pd.concat([df_train, df_test])
+
+    word_vocab, reverse_word_vocab, counts = build_vocab(df_all)
+    embeddings = initial_embedding(word_vocab, 100, glove_path)
+
+    # create training and testing labels
+    y_train = df_train[LABEL_COL]
+    y_test = df_test[LABEL_COL]
+
+    # create training and testing inputs
+    X_train = df_train[TEXT_COL]
+    X_test = df_test[TEXT_COL]
+
+    df_train = pd.concat([df_train, get_all_tokens_glove(X_train)], axis=1)
+    df_test = pd.concat([df_test, get_all_tokens_glove(X_test)], axis=1)
+
     # TODO: phase out use of args
     args = Argument()
     # get embeddings, number of labels
@@ -668,11 +731,10 @@ if __name__=="__main__":
         classification_model.cuda() 
     print(classification_model)
 
-        
     # optionally pre train classifier
-    if pre_train_cls:
-        print('pre-training the classifier')
-        classification_model.pretrain_classifier(data, batch_size)
+    # if pre_train_cls:
+    #     print('pre-training the classifier')
+    #     classification_model.pretrain_classifier(data, batch_size)
 
     # train the model
-    classification_model.fit(data, batch_size)
+    classification_model.fit(df_train, batch_size)
