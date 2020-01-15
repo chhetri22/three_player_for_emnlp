@@ -171,7 +171,7 @@ class DepRnnModel(nn.Module):
         
         if mask is not None:
             seq_lengths = list(torch.sum(mask, dim=1).cpu().data.numpy())
-            seq_lengths = map(int, seq_lengths)
+            seq_lengths = list(map(int, seq_lengths))
             inputs_ = torch.nn.utils.rnn.pack_padded_sequence(embeddings_, seq_lengths)
         else:
             inputs_ = embeddings_
@@ -255,7 +255,7 @@ class IntrospectionGeneratorModule(nn.Module):
         self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
         
         self.Transformation = nn.Sequential()
-        self.Transformation.add_module('linear_layer', nn.Linear(self.hidden_dim + self.label_embedding_dim, self.hidden_dim / 2))
+        self.Transformation.add_module('linear_layer', nn.Linear(self.hidden_dim + self.label_embedding_dim, self.hidden_dim // 2))
         self.Transformation.add_module('tanh_layer', nn.Tanh())
         self.Generator = DepGenerator(args, self.input_dim)
         
@@ -341,6 +341,11 @@ class ThreePlayerModel(nn.Module):
         self.NEG_INF = -1.0e6 # TODO: move out and set as constant?
         self.loss_func = nn.CrossEntropyLoss(reduce=False)
 
+        # what are these for?
+        self.count_tokens = args.count_tokens
+        self.count_pieces = args.count_pieces
+
+        self.fixed_classifier = False
 
     # methods from Hardrationale3PlayerClassificationModel
     def init_optimizers(self): # not sure if this can be merged with initializer
@@ -708,8 +713,6 @@ class ThreePlayerModel(nn.Module):
         self.display_example(batch_x_[rand_idx], batch_m_[rand_idx], z[rand_idx])
 
         return accuracy, anti_accuracy, sparsity
-    
-
 
     def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=50):
         train_accs = []
@@ -789,7 +792,7 @@ class ThreePlayerModel(nn.Module):
             if self.args.cuda:
                 z_baseline = z_baseline.cuda()
 
-            losses, predict, anti_predict, z, z_rewards, continuity_loss, sparsity_loss = classification_model.train_one_step(\
+            losses, predict, anti_predict, cls_predict, z, z_rewards, consistency_loss, continuity_loss, sparsity_loss = classification_model.train_one_step(\
             batch_x_, batch_y_, z_baseline, batch_m_)
 
             z_batch_reward = np.mean(z_rewards.cpu().data.numpy())
@@ -804,6 +807,7 @@ class ThreePlayerModel(nn.Module):
             if i % test_iteration == 0:
                 avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
                 test_acc, test_anti_acc, test_sparsity = self.test(df_test)
+                print("\nAvg. train accuracy: ", avg_train_acc)
                 if test_acc > best_test_acc:
                     if self.args.save_best_model:
                         print("saving best model and model stats")
