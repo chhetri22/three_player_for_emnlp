@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import random
 import sys
 from collections import deque
 from datetime import datetime
@@ -493,7 +494,7 @@ class ThreePlayerModel(nn.Module):
         tokens = self.convert_ids_to_tokens_glove(ids)
 
         final = ""
-        for i in range(len(m)):
+        for i in range(len(tokens)):
             if z[i]:
                 final += "[" + tokens[i] + "]"
             else:
@@ -507,34 +508,43 @@ class ThreePlayerModel(nn.Module):
     def test(self, df_test):
         self.eval()
         
-        test_size = 200
-        
-        test_batch = df_test.sample(test_size)
-        batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
-        predict, anti_predict, z, neg_log_probs = self.forward(batch_x_, batch_m_)
-        
-        # do a softmax on the predicted class probabilities
-        _, y_pred = torch.max(predict, dim=1)
-        _, anti_y_pred = torch.max(anti_predict, dim=1)
-        
-        # calculate sparsity
-        sparsity_ratios = self._get_sparsity(z, batch_m_)
-        test_sparsity = sparsity_ratios.sum().item() / len(sparsity_ratios)
-        print("Test sparsity: ", test_sparsity)
-        
-        accuracy = (y_pred == batch_y_).sum().item() / test_size
-        anti_accuracy = (anti_y_pred == batch_y_).sum().item() / test_size
+        test_batch_size = 200
+        accuracy = 0
+        anti_accuracy = 0
+        sparsity_total = 0
+
+        for i in range(len(df_test)//test_batch_size):
+            test_batch = df_test.iloc[i*test_batch_size:(i+1)*test_batch_size]
+            batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+            predict, anti_predict, z, neg_log_probs = self.forward(batch_x_, batch_m_)
+            
+            # do a softmax on the predicted class probabilities
+            _, y_pred = torch.max(predict, dim=1)
+            _, anti_y_pred = torch.max(anti_predict, dim=1)
+            
+            accuracy += (y_pred == batch_y_).sum().item()
+            anti_accuracy += (anti_y_pred == batch_y_).sum().item()
+
+            # calculate sparsity
+            sparsity_ratios = self._get_sparsity(z, batch_m_)
+            sparsity_total += sparsity_ratios.sum().item()
+
+        accuracy = accuracy / len(df_test)
+        anti_accuracy = anti_accuracy / len(df_test)
+        sparsity = sparsity_total / len(df_test)
+        print("Test sparsity: ", sparsity)
         print("Test accuracy: ", accuracy, "% Anti-accuracy: ", anti_accuracy)
 
+        rand_idx = random.randint(0, test_batch_size-1)
         # display an example
-        print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
-        self.display_example(batch_x_[0], batch_m_[0], z[0])
+        print("Gold Label: ", batch_y_[rand_idx].item(), " Pred label: ", y_pred[rand_idx].item())
+        self.display_example(batch_x_[rand_idx], batch_m_[rand_idx], z[rand_idx])
 
-        return accuracy, anti_accuracy, test_sparsity
+        return accuracy, anti_accuracy, sparsity
     
 
 
-    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=10):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=50):
         train_accs = []
         test_accs = []
         best_train_acc = 0.0
@@ -596,8 +606,11 @@ class ThreePlayerModel(nn.Module):
         old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
 
         current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
-        log_filepath = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "_training_stats.txt")
-        logging.basicConfig(filename=log_filepath, filemode='a', level=logging.INFO)
+        if self.args.save_best_model:
+            model_folder_path = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "training_run")
+            os.mkdir(model_folder_path)
+            log_filepath = os.path.join(model_folder_path, "training_stats.txt")
+            logging.basicConfig(filename=log_filepath, filemode='a', level=logging.INFO)
         for i in tqdm(range(num_iteration)):
             self.train()
         
@@ -622,19 +635,19 @@ class ThreePlayerModel(nn.Module):
             train_accs.append(acc)
 
             if i % test_iteration == 0:
+                avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
                 test_acc, test_anti_acc, test_sparsity = self.test(df_test)
                 if test_acc > best_test_acc:
                     if self.args.save_best_model:
                         print("saving best model and model stats")
                         current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
                         # save model
-                        torch.save(self.state_dict(), os.path.join(self.args.save_path,
-                            self.args.model_prefix + current_datetime + ".pth"))
+                        torch.save(self.state_dict(), os.path.join(model_folder_path, self.args.model_prefix + current_datetime + ".pth"))
                         # save stats
                         logging.info('best model at time ' + current_datetime)
                         logging.info('sparsity lambda: %.4f'%(self.args.lambda_sparsity))
                         logging.info('highlight percentage: %.4f'%(self.args.highlight_percentage))
-                        logging.info('last train acc: %.4f'%train_accs[-1])
+                        logging.info('last train acc: %.4f, avg train acc: %.4f'%(train_accs[-1], avg_train_acc))
                         logging.info('last test acc: %.4f, previous best test acc: %.4f, last anti test acc: %.4f'%(test_acc,  best_test_acc, test_anti_acc))
                         logging.info('last test sparsity: %.4f'%test_sparsity)
                         logging.info('supervised_loss: %.4f, sparsity_loss: %.4f, continuity_loss: %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
@@ -685,7 +698,7 @@ class Argument():
         self.model_prefix = "sst2rnpmodel"
         self.save_best_model = True
         self.num_labels = 2
-        self.pre_train_cls = True
+        self.pre_train_cls = False
 
 
 if __name__=="__main__":
@@ -701,9 +714,10 @@ if __name__=="__main__":
     pre_train_cls = True
     num_labels = 2
 
-    glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+    glove_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
     COUNT_THRESH = 3
-    DATA_FOLDER = os.path.join("../../data/sst2/")
+    DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
+    # DATA_FOLDER = os.path.join("../../data/sst2/")
     LABEL_COL = "label"
     TEXT_COL = "sentence"
     TOKEN_CUTOFF = 70
@@ -807,12 +821,12 @@ if __name__=="__main__":
     print(vars(args))
     # get embeddings, number of labels
     classification_model = ThreePlayerModel(args, embeddings, num_labels)
-    if use_cuda:
+    if args.cuda:
         classification_model.cuda() 
     print(classification_model)
 
     # optionally pre train classifier
-    if pre_train_cls:
+    if args.pre_train_cls:
         print('pre-training the classifier')
         classification_model.pretrain_classifier(df_train, df_test, batch_size)
 
