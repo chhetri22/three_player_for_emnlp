@@ -31,11 +31,11 @@ class RnnModel(nn.Module):
         if args.cell_type == 'GRU':
             self.rnn_layer = nn.GRU(input_size=input_dim, 
                                     hidden_size=args.hidden_dim//2, 
-                                    num_layers=args.layer_num, bidirectional=True)
+                                    num_layers=args.layer_num, bidirectional=True, dropout=.4)
         elif args.cell_type == 'LSTM':
             self.rnn_layer = nn.LSTM(input_size=input_dim, 
                                      hidden_size=args.hidden_dim//2, 
-                                     num_layers=args.layer_num, bidirectional=True)
+                                     num_layers=args.layer_num, bidirectional=True, dropout=.4)
     
     def forward(self, embeddings, mask=None):
         """
@@ -544,7 +544,7 @@ class ThreePlayerModel(nn.Module):
     
 
 
-    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=50):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=100):
         train_accs = []
         test_accs = []
         best_train_acc = 0.0
@@ -589,17 +589,19 @@ class ThreePlayerModel(nn.Module):
                     test_count += batch_size
 
                     test_accs.append(test_correct / test_total)
-                    if test_correct / test_total > best_test_acc:
-                        best_test_acc = test_correct / test_total
+                    # if test_correct / test_total > best_test_acc:
+                    #     best_test_acc = test_correct / test_total
 
-                print('train:', train_accs[-1], 'best train acc:', best_train_acc)
-                print('test:', test_accs[-1], 'best test:', best_test_acc)
+                averge_train_acc = sum(train_accs[len(train_accs) - 10: len(train_accs)])/10
+                print('\ntrain:', train_accs[-1], '\ntest:', averge_train_acc)    
     
-    
-    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=50):
+    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=100):
         print('training with game mode:', classification_model.game_mode)
         train_accs = []
-        best_test_acc = 0.0
+
+        num_iteration = 50000
+        display_iteration = 1
+        test_iteration = 200
         
         self.init_optimizers()
         self.init_rl_optimizers()
