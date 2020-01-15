@@ -31,11 +31,11 @@ class RnnModel(nn.Module):
         if args.cell_type == 'GRU':
             self.rnn_layer = nn.GRU(input_size=input_dim, 
                                     hidden_size=args.hidden_dim//2, 
-                                    num_layers=args.layer_num, bidirectional=True)
+                                    num_layers=args.layer_num, bidirectional=True, dropout=.5)
         elif args.cell_type == 'LSTM':
             self.rnn_layer = nn.LSTM(input_size=input_dim, 
                                      hidden_size=args.hidden_dim//2, 
-                                     num_layers=args.layer_num, bidirectional=True)
+                                     num_layers=args.layer_num, bidirectional=True, dropout=.5)
     
     def forward(self, embeddings, mask=None):
         """
@@ -345,7 +345,7 @@ class ThreePlayerModel(nn.Module):
         self.count_tokens = args.count_tokens
         self.count_pieces = args.count_pieces
 
-        self.fixed_classifier = False
+        self.fixed_classifier = args.fixed_classifier
 
     # methods from Hardrationale3PlayerClassificationModel
     def init_optimizers(self): # not sure if this can be merged with initializer
@@ -720,6 +720,7 @@ class ThreePlayerModel(nn.Module):
         best_train_acc = 0.0
         best_test_acc = 0.0
         self.init_optimizers()
+        self.init_rl_optimizers()
 
         for i in tqdm(range(num_iteration)):
             self.train() # pytorch fn; sets module to train mode
@@ -749,7 +750,9 @@ class ThreePlayerModel(nn.Module):
                     test_batch = df_test.sample(batch_size) # TODO: originally used dev batch here?
                     batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
 
-                    predict = self.forward_cls(batch_x_, batch_m_)
+                    # predict = self.forward_cls(batch_x_, batch_m_
+                    embeddings = self.embed_layer(batch_x_)
+                    _, predict = self.generator(embeddings, batch_m_)
 
                     _, y_pred = torch.max(predict, dim=1)
 
@@ -759,14 +762,16 @@ class ThreePlayerModel(nn.Module):
                     test_count += batch_size
 
                     test_accs.append(test_correct / test_total)
-                    if test_correct / test_total > best_test_acc:
-                        best_test_acc = test_correct / test_total
+                
+                if test_correct / test_total > best_test_acc:
+                    best_test_acc = test_correct / test_total
 
-                print('train:', train_accs[-1], 'best train acc:', best_train_acc)
+                avg_train_accs = sum(train_accs[len(train_accs) - 10:len(train_accs)])/10
+                print('train:', avg_train_accs, 'best train acc:', best_train_acc)
                 print('test:', test_accs[-1], 'best test:', best_test_acc)
     
     
-    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=50):
+    def fit(self, df_train, df_test, batch_size, num_iteration=40000, test_iteration=200):
         print('training with game mode:', classification_model.game_mode)
         train_accs = []
         best_test_acc = 0.0
@@ -806,8 +811,8 @@ class ThreePlayerModel(nn.Module):
 
             if i % test_iteration == 0:
                 avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
-                test_acc, test_anti_acc, test_sparsity = self.test(df_test)
                 print("\nAvg. train accuracy: ", avg_train_acc)
+                test_acc, test_anti_acc, test_sparsity = self.test(df_test)
                 if test_acc > best_test_acc:
                     if self.args.save_best_model:
                         print("saving best model and model stats")
@@ -829,7 +834,7 @@ class Argument():
     def __init__(self):
         self.model_type = 'RNN'
         self.cell_type = 'GRU'
-        self.hidden_dim = 400
+        self.hidden_dim = 200
         self.embedding_dim = 100
         self.kernel_size = 5
         self.layer_num = 1
@@ -869,7 +874,7 @@ class Argument():
         self.model_prefix = "sst2rnpmodel"
         self.save_best_model = True
         self.num_labels = 2
-        self.pre_train_cls = False
+        self.pre_train_cls = True
 
 
 if __name__=="__main__":
@@ -885,8 +890,8 @@ if __name__=="__main__":
     pre_train_cls = True
     num_labels = 2
 
-    glove_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
-    COUNT_THRESH = 3
+    glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+    COUNT_THRESH = 1
     DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
     # DATA_FOLDER = os.path.join("../../data/sst2/")
     LABEL_COL = "label"
