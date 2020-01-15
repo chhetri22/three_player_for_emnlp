@@ -210,6 +210,7 @@ class ThreePlayerModel(nn.Module):
         self.game_mode = args.game_mode
         self.ngram = args.ngram
         self.lambda_acc_gap = args.lambda_acc_gap
+        self.z_history_rewards = deque([0], maxlen=200)
 
         # initialize model components
         self.E_model = explainer(args)
@@ -371,7 +372,7 @@ class ThreePlayerModel(nn.Module):
             prediction = prediction.cuda()  #(batch_size,)
             prediction_anti = prediction_anti.cuda()
         
-        continuity_loss, sparsity_loss = self.count_regularization_baos_for_both(z, self.count_tokens, self.count_pieces, mask)
+        continuity_loss, sparsity_loss = self.count_regularization_baos_for_both(z, self.args.count_tokens, self.args.count_pieces, mask)
         
         continuity_loss = continuity_loss * self.lambda_continuity
         sparsity_loss = sparsity_loss * self.lambda_sparsity
@@ -471,8 +472,6 @@ class ThreePlayerModel(nn.Module):
         seq_lengths = torch.sum(mask, dim=1)
 
         sparsity_ratio = torch.sum(mask_z, dim=-1) / seq_lengths #(batch_size,)
-    #     sparsity_count = torch.sum(mask_z, dim=-1)
-
         return sparsity_ratio
 
     def _get_continuity(self, z, mask):
@@ -482,7 +481,6 @@ class ThreePlayerModel(nn.Module):
         mask_z_ = torch.cat([mask_z[:, 1:], mask_z[:, -1:]], dim=-1)
             
         continuity_ratio = torch.sum(torch.abs(mask_z - mask_z_), dim=-1) / seq_lengths #(batch_size,) 
-    #     continuity_count = torch.sum(torch.abs(mask_z - mask_z_), dim=-1)
         
         return continuity_ratio
 
@@ -517,7 +515,8 @@ class ThreePlayerModel(nn.Module):
         _, anti_y_pred = torch.max(anti_predict, dim=1)
         
         # calculate sparsity
-        print("Test sparsity: ", self._get_sparsity(z, batch_m_).sum().item() / batch_size)
+        sparsity_ratios = self._get_sparsity(z, batch_m_)
+        print("Test sparsity: ", sparsity_ratios.sum().item() / len(sparsity_ratios))
         
         accuracy = (y_pred == batch_y_).sum().item() / test_size
         anti_accuracy = (anti_y_pred == batch_y_).sum().item() / test_size
@@ -527,9 +526,76 @@ class ThreePlayerModel(nn.Module):
         print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
         self.display_example(batch_x_[0], batch_m_[0], z[0])
 
-    def fit(self, df_train, batch_size, num_iteration=8000, display_iteration=10, test_iteration=10):
+    def pretrain_classifier(self, df_train, batch_size, num_iteration=2000, display_iteration=10, test_iteration=10):
+        train_accs = []
+        # best_dev_acc = 0.0
+
+        self.init_optimizers() # ?? do we have to do this here?
+
+        for i in tqdm(range(num_iteration)):
+            self.train() # pytorch fn; sets module to train mode
+
+            # sample a batch of data
+            batch = df_train.sample(batch_size, replace=True)
+            batch_x_, batch_m_, batch_y_ = self.generate_data(batch)
+
+            losses, predict = self.train_cls_one_step(batch_x_, batch_y_, batch_m_)
+
+            # calculate classification accuarcy
+            _, y_pred = torch.max(predict, dim=1)
+
+            acc = np.float((y_pred == batch_y_).sum().cpu().data[0]) / batch_size
+            train_accs.append(acc)
+
+            if (i+1) % test_iteration == 0:
+                self.eval() # set module to eval mode
+
+                test_batch = df_test.sample(batch_size) # TODO: originally used dev batch here?
+                batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+
+                predict = self.forward_cls(batch_x_, batch_m_)
+
+
+                eval_sets = ['dev']
+                for set_name in (eval_sets):
+                    dev_correct = 0.0
+                    dev_anti_correct = 0.0
+                    dev_cls_correct = 0.0
+                    dev_total = 0.0
+                    sparsity_total = 0.0
+                    dev_count = 0
+
+                    num_dev_instance = df_train.data_sets[set_name].size()
+
+                    for start in range(num_dev_instance // args.batch_size):
+                        dev_batch = df_dev.sample(batch_size)
+                        batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+
+                        predict = self.forward_cls(batch_x_, batch_m_)
+                        # calculate classification accuarcy
+                        _, y_pred = torch.max(predict, dim=1)
+
+                        dev_correct += np.float((y_pred == batch_y_).sum().cpu().data[0])
+                        dev_total += batch_size
+
+                        dev_count += batch_size
+
+                    if set_name == 'dev':
+                        dev_accs.append(dev_correct / dev_total)
+                        dev_anti_accs.append(dev_anti_correct / dev_total)
+                        dev_cls_accs.append(dev_cls_correct / dev_total)
+                        if dev_correct / dev_total > best_dev_acc:
+                            best_dev_acc = dev_correct / dev_total
+
+                    else:
+                        test_accs.append(dev_correct / dev_total)
+
+                print('train:', train_accs[-1])
+                print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count)
+    
+    
+    def fit(self, df_train, batch_size, num_iteration=80000, display_iteration=10, test_iteration=10):
         print('training with game mode:', classification_model.game_mode)
-        train_losses = []
         train_accs = []
 
         num_iteration = 20000
@@ -540,10 +606,6 @@ class ThreePlayerModel(nn.Module):
         self.init_rl_optimizers()
         old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
 
-        queue_length = 200
-        z_history_rewards = deque(maxlen=queue_length)
-        z_history_rewards.append(0.)
-
         for i in tqdm(range(num_iteration)):
             self.train()
         
@@ -551,7 +613,15 @@ class ThreePlayerModel(nn.Module):
             batch = df_train.sample(batch_size, replace=True)
             batch_x_, batch_m_, batch_y_ = self.generate_data(batch)
 
-            losses, predict = classification_model.train_cls_one_step(batch_x_, batch_y_, batch_m_)
+            z_baseline = Variable(torch.FloatTensor([float(np.mean(self.z_history_rewards))]))
+            if self.args.cuda:
+                z_baseline = z_baseline.cuda()
+
+            losses, predict, anti_predict, z, z_rewards, continuity_loss, sparsity_loss = classification_model.train_one_step(\
+            batch_x_, batch_y_, z_baseline, batch_m_)
+
+            z_batch_reward = np.mean(z_rewards.cpu().data.numpy())
+            self.z_history_rewards.append(z_batch_reward)
 
             # calculate classification accuarcy
             _, y_pred = torch.max(predict, dim=1)
@@ -624,10 +694,10 @@ if __name__=="__main__":
 
     glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
     COUNT_THRESH = 3
-    DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
+    DATA_FOLDER = os.path.join("../../data/sst2/")
     LABEL_COL = "label"
     TEXT_COL = "sentence"
-    TOKEN_CUTOFF = 50
+    TOKEN_CUTOFF = 70
 
     def generate_tokens_glove(word_vocab, text):
         indexed_text = [word_vocab[word] if (counts[word] > COUNT_THRESH) else word_vocab["<UNK>"] for word in text.split()]
@@ -725,6 +795,7 @@ if __name__=="__main__":
 
     # TODO: phase out use of args
     args = Argument()
+    print(vars(args))
     # get embeddings, number of labels
     classification_model = ThreePlayerModel(args, embeddings, num_labels)
     if use_cuda:
@@ -732,9 +803,9 @@ if __name__=="__main__":
     print(classification_model)
 
     # optionally pre train classifier
-    # if pre_train_cls:
-    #     print('pre-training the classifier')
-    #     classification_model.pretrain_classifier(data, batch_size)
+    if pre_train_cls:
+        print('pre-training the classifier')
+        classification_model.pretrain_classifier(data, batch_size)
 
     # train the model
     classification_model.fit(df_train, batch_size)
