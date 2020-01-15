@@ -1,14 +1,17 @@
-import sys
-import os
 import json
-import pandas as pd
+import logging
+import os
+import sys
+from collections import deque
+from datetime import datetime
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import torch.nn.functional as F
+from torch.autograd import Variable
 from tqdm import tqdm
-from collections import deque
 
 
 # classes needed for Rationale3Player
@@ -516,7 +519,8 @@ class ThreePlayerModel(nn.Module):
         
         # calculate sparsity
         sparsity_ratios = self._get_sparsity(z, batch_m_)
-        print("Test sparsity: ", sparsity_ratios.sum().item() / len(sparsity_ratios))
+        test_sparsity = sparsity_ratios.sum().item() / len(sparsity_ratios)
+        print("Test sparsity: ", test_sparsity)
         
         accuracy = (y_pred == batch_y_).sum().item() / test_size
         anti_accuracy = (anti_y_pred == batch_y_).sum().item() / test_size
@@ -525,6 +529,10 @@ class ThreePlayerModel(nn.Module):
         # display an example
         print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
         self.display_example(batch_x_[0], batch_m_[0], z[0])
+
+        return accuracy, anti_accuracy, test_sparsity
+    
+
 
     def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=10):
         train_accs = []
@@ -578,18 +586,18 @@ class ThreePlayerModel(nn.Module):
                 print('test:', test_accs[-1], 'best test:', best_test_acc)
     
     
-    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=10):
+    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=50):
         print('training with game mode:', classification_model.game_mode)
         train_accs = []
-
-        num_iteration = 20000
-        display_iteration = 1
-        test_iteration = 50
+        best_test_acc = 0.0
         
         self.init_optimizers()
         self.init_rl_optimizers()
         old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
 
+        current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
+        log_filepath = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "_training_stats.txt")
+        logging.basicConfig(filename=log_filepath, filemode='a', level=logging.INFO)
         for i in tqdm(range(num_iteration)):
             self.train()
         
@@ -614,7 +622,23 @@ class ThreePlayerModel(nn.Module):
             train_accs.append(acc)
 
             if i % test_iteration == 0:
-                self.test(df_test)
+                test_acc, test_anti_acc, test_sparsity = self.test(df_test)
+                if test_acc > best_test_acc:
+                    if self.args.save_best_model:
+                        print("saving best model and model stats")
+                        current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
+                        # save model
+                        torch.save(self.state_dict(), os.path.join(self.args.save_path,
+                            self.args.model_prefix + current_datetime + ".pth"))
+                        # save stats
+                        logging.info('best model at time ' + current_datetime)
+                        logging.info('sparsity lambda: %.4f'%(self.args.lambda_sparsity))
+                        logging.info('highlight percentage: %.4f'%(self.args.highlight_percentage))
+                        logging.info('last train acc: %.4f'%train_accs[-1])
+                        logging.info('last test acc: %.4f, previous best test acc: %.4f, last anti test acc: %.4f'%(test_acc,  best_test_acc, test_anti_acc))
+                        logging.info('last test sparsity: %.4f'%test_sparsity)
+                        logging.info('supervised_loss: %.4f, sparsity_loss: %.4f, continuity_loss: %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
+                    best_test_acc = test_acc
 
 
 class Argument():
