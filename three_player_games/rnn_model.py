@@ -89,17 +89,16 @@ class RnnModel(nn.Module):
         """
         embeddings_ = embeddings.transpose(0, 1) #(sequence_length, batch_size, embedding_dim)
         
-        if mask is not None and False: #TODO change
+        if mask is not None: #TODO change
             seq_lengths = list(torch.sum(mask, dim=1).cpu().data.numpy())
             seq_lengths = list(map(int, seq_lengths))
-            print("sequence lens: ", seq_lengths)
             inputs_ = torch.nn.utils.rnn.pack_padded_sequence(embeddings_, seq_lengths, enforce_sorted=False)
         else:
             inputs_ = embeddings_
         
         hidden, _ = self.rnn_layer(inputs_) #(sequence_length, batch_size, hidden_dim (* 2 if bidirectional))
         
-        if mask is not None and False: #TODO change
+        if mask is not None: #TODO change
             hidden, _ = torch.nn.utils.rnn.pad_packed_sequence(hidden) #(length, batch_size, hidden_dim)
         
         return hidden.permute(1, 2, 0) #(batch_size, hidden_dim, sequence_length)

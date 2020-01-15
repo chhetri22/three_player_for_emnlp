@@ -9,7 +9,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 from tqdm import tqdm
 from collections import deque
-
+import random
 
 # classes needed for Rationale3Player
 class RnnModel(nn.Module):
@@ -490,7 +490,7 @@ class ThreePlayerModel(nn.Module):
         tokens = self.convert_ids_to_tokens_glove(ids)
 
         final = ""
-        for i in range(len(m)):
+        for i in range(len(tokens)):
             if z[i]:
                 final += "[" + tokens[i] + "]"
             else:
@@ -504,27 +504,39 @@ class ThreePlayerModel(nn.Module):
     def test(self, df_test):
         self.eval()
         
-        test_size = 200
+        test_batch_size = 200
         
-        test_batch = df_test.sample(test_size)
-        batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
-        predict, anti_predict, z, neg_log_probs = self.forward(batch_x_, batch_m_)
-        
-        # do a softmax on the predicted class probabilities
-        _, y_pred = torch.max(predict, dim=1)
-        _, anti_y_pred = torch.max(anti_predict, dim=1)
-        
-        # calculate sparsity
-        sparsity_ratios = self._get_sparsity(z, batch_m_)
-        print("Test sparsity: ", sparsity_ratios.sum().item() / len(sparsity_ratios))
-        
-        accuracy = (y_pred == batch_y_).sum().item() / test_size
-        anti_accuracy = (anti_y_pred == batch_y_).sum().item() / test_size
+        accuracy = 0
+        anti_accuracy = 0
+        sparsity_total = 0
+
+        for i in range(len(df_test)//test_batch_size):
+            test_batch = df_test.iloc[i*test_batch_size:(i+1)*test_batch_size]
+            batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+            predict, anti_predict, z, neg_log_probs = self.forward(batch_x_, batch_m_)
+            
+            # do a softmax on the predicted class probabilities
+            _, y_pred = torch.max(predict, dim=1)
+            _, anti_y_pred = torch.max(anti_predict, dim=1)
+            
+            accuracy += (y_pred == batch_y_).sum().item()
+            anti_accuracy += (anti_y_pred == batch_y_).sum().item()
+
+            # calculate sparsity
+            sparsity_ratios = self._get_sparsity(z, batch_m_)
+            sparsity_total += sparsity_ratios.sum().item()
+
+        accuracy = accuracy / len(df_test)
+        anti_accuracy = anti_accuracy / len(df_test)
+        sparsity = sparsity_total / len(df_test)
+        print("Test sparsity: ", sparsity)
         print("Test accuracy: ", accuracy, "% Anti-accuracy: ", anti_accuracy)
 
+        rand_idx = random.randint(0, test_batch_size)
         # display an example
-        print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
-        self.display_example(batch_x_[0], batch_m_[0], z[0])
+        print("Gold Label: ", batch_y_[rand_idx].item(), " Pred label: ", y_pred[rand_idx].item())
+        self.display_example(batch_x_[rand_idx], batch_m_[rand_idx], z[rand_idx])
+
 
     def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=10):
         train_accs = []
@@ -584,7 +596,7 @@ class ThreePlayerModel(nn.Module):
 
         num_iteration = 20000
         display_iteration = 1
-        test_iteration = 50
+        test_iteration = 200
         
         self.init_optimizers()
         self.init_rl_optimizers()
@@ -614,6 +626,8 @@ class ThreePlayerModel(nn.Module):
             train_accs.append(acc)
 
             if i % test_iteration == 0:
+                avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
+                print("\nAverage training accuracy: ", avg_train_acc)
                 self.test(df_test)
 
 
@@ -677,9 +691,10 @@ if __name__=="__main__":
     pre_train_cls = True
     num_labels = 2
 
-    glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+    glove_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
     COUNT_THRESH = 3
-    DATA_FOLDER = os.path.join("../../data/sst2/")
+    DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
+    # DATA_FOLDER = os.path.join("../../data/sst2/")
     LABEL_COL = "label"
     TEXT_COL = "sentence"
     TOKEN_CUTOFF = 70
