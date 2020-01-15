@@ -501,7 +501,7 @@ class ThreePlayerModel(nn.Module):
     def convert_ids_to_tokens_glove(self, ids):
         return [reverse_word_vocab[i.item()] for i in ids]
 
-    def test(self):
+    def test(self, df_test):
         self.eval()
         
         test_size = 200
@@ -526,11 +526,12 @@ class ThreePlayerModel(nn.Module):
         print("Gold Label: ", batch_y_[0].item(), " Pred label: ", y_pred[0].item())
         self.display_example(batch_x_[0], batch_m_[0], z[0])
 
-    def pretrain_classifier(self, df_train, batch_size, num_iteration=2000, display_iteration=10, test_iteration=10):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=10):
         train_accs = []
-        # best_dev_acc = 0.0
-
-        self.init_optimizers() # ?? do we have to do this here?
+        test_accs = []
+        best_train_acc = 0.0
+        best_test_acc = 0.0
+        self.init_optimizers()
 
         for i in tqdm(range(num_iteration)):
             self.train() # pytorch fn; sets module to train mode
@@ -544,57 +545,40 @@ class ThreePlayerModel(nn.Module):
             # calculate classification accuarcy
             _, y_pred = torch.max(predict, dim=1)
 
-            acc = np.float((y_pred == batch_y_).sum().cpu().data[0]) / batch_size
+            acc = np.float((y_pred == batch_y_).sum().cpu().data.item()) / batch_size
             train_accs.append(acc)
+
+            if acc > best_train_acc:
+                best_train_acc = acc
 
             if (i+1) % test_iteration == 0:
                 self.eval() # set module to eval mode
+                test_correct = 0.0
+                test_total = 0.0
+                test_count = 0
 
-                test_batch = df_test.sample(batch_size) # TODO: originally used dev batch here?
-                batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+                for test_iter in range(len(df_test)//batch_size):
+                    test_batch = df_test.sample(batch_size) # TODO: originally used dev batch here?
+                    batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
 
-                predict = self.forward_cls(batch_x_, batch_m_)
+                    predict = self.forward_cls(batch_x_, batch_m_)
 
+                    _, y_pred = torch.max(predict, dim=1)
 
-                eval_sets = ['dev']
-                for set_name in (eval_sets):
-                    dev_correct = 0.0
-                    dev_anti_correct = 0.0
-                    dev_cls_correct = 0.0
-                    dev_total = 0.0
-                    sparsity_total = 0.0
-                    dev_count = 0
+                    test_correct += np.float((y_pred == batch_y_).sum().cpu().data.item())
+                    test_total += batch_size
 
-                    num_dev_instance = df_train.data_sets[set_name].size()
+                    test_count += batch_size
 
-                    for start in range(num_dev_instance // args.batch_size):
-                        dev_batch = df_dev.sample(batch_size)
-                        batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
+                    test_accs.append(test_correct / test_total)
+                    if test_correct / test_total > best_test_acc:
+                        best_test_acc = test_correct / test_total
 
-                        predict = self.forward_cls(batch_x_, batch_m_)
-                        # calculate classification accuarcy
-                        _, y_pred = torch.max(predict, dim=1)
-
-                        dev_correct += np.float((y_pred == batch_y_).sum().cpu().data[0])
-                        dev_total += batch_size
-
-                        dev_count += batch_size
-
-                    if set_name == 'dev':
-                        dev_accs.append(dev_correct / dev_total)
-                        dev_anti_accs.append(dev_anti_correct / dev_total)
-                        dev_cls_accs.append(dev_cls_correct / dev_total)
-                        if dev_correct / dev_total > best_dev_acc:
-                            best_dev_acc = dev_correct / dev_total
-
-                    else:
-                        test_accs.append(dev_correct / dev_total)
-
-                print('train:', train_accs[-1])
-                print('dev:', dev_accs[-1], 'best dev:', best_dev_acc, 'anti dev acc:', dev_anti_accs[-1], 'cls dev acc:', dev_cls_accs[-1], 'sparsity:', sparsity_total / dev_count)
+                print('train:', train_accs[-1], 'best train acc:', best_train_acc)
+                print('test:', test_accs[-1], 'best test:', best_test_acc)
     
     
-    def fit(self, df_train, batch_size, num_iteration=80000, display_iteration=10, test_iteration=10):
+    def fit(self, df_train, df_test, batch_size, num_iteration=80000, test_iteration=10):
         print('training with game mode:', classification_model.game_mode)
         train_accs = []
 
@@ -630,7 +614,7 @@ class ThreePlayerModel(nn.Module):
             train_accs.append(acc)
 
             if i % test_iteration == 0:
-                self.test()
+                self.test(df_test)
 
 
 class Argument():
@@ -677,6 +661,7 @@ class Argument():
         self.model_prefix = "sst2rnpmodel"
         self.save_best_model = True
         self.num_labels = 2
+        self.pre_train_cls = True
 
 
 if __name__=="__main__":
@@ -689,7 +674,7 @@ if __name__=="__main__":
     save_path = os.path.join("..", "models")
     model_prefix = "sst2rnpmodel"
     save_best_model = True
-    pre_train_cls = False
+    pre_train_cls = True
     num_labels = 2
 
     glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
@@ -805,7 +790,7 @@ if __name__=="__main__":
     # optionally pre train classifier
     if pre_train_cls:
         print('pre-training the classifier')
-        classification_model.pretrain_classifier(data, batch_size)
+        classification_model.pretrain_classifier(df_train, df_test, batch_size)
 
     # train the model
-    classification_model.fit(df_train, batch_size)
+    classification_model.fit(df_train, df_test, batch_size)
