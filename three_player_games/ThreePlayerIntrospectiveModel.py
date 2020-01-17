@@ -250,24 +250,25 @@ class IntrospectionGeneratorModule(nn.Module):
         
         self.input_dim = args.embedding_dim
         self.NEG_INF = -1.0e6
-        # self.lab_embed_layer = self._create_label_embed_layer() # should be shared with the Classifier_pred weights
+        self.lab_embed_layer = self._create_label_embed_layer() # should be shared with the Classifier_pred weights
         
         # baseline classification model
         # self.Classifier_enc = RnnModel(args, self.input_dim)
         # self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
 
-        self.classifier = BertForSequenceClassification.from_pretrained('bert-base-uncased')
-        
+        self.classifier = BertForSequenceClassification.from_pretrained('bert-base-uncased', output_hidden_states=True, output_attentions=True)
+        # self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
+
         self.Transformation = nn.Sequential()
         self.Transformation.add_module('linear_layer', nn.Linear(self.hidden_dim + self.label_embedding_dim, self.hidden_dim // 2))
         self.Transformation.add_module('tanh_layer', nn.Tanh())
         self.Generator = DepGenerator(args, self.input_dim)
         
-    # def _create_label_embed_layer(self):
-    #     embed_layer = nn.Embedding(self.num_labels, self.label_embedding_dim)
-    #     embed_layer.weight.data.normal_(mean=0, std=0.1)
-    #     embed_layer.weight.requires_grad = True
-    #     return embed_layer
+    def _create_label_embed_layer(self):
+        embed_layer = nn.Embedding(self.num_labels, self.label_embedding_dim)
+        embed_layer.weight.data.normal_(mean=0, std=0.1)
+        embed_layer.weight.requires_grad = True
+        return embed_layer
     
     def forward(self, X_tokens, mask):
         # cls_hiddens = self.Classifier_enc(word_embeddings, mask) # (batch_size, hidden_dim, sequence_length)
@@ -279,14 +280,17 @@ class IntrospectionGeneratorModule(nn.Module):
         # cls_pred_logits = self.Classifier_pred(max_cls_hidden) # (batch_size, num_labels)
         cls_pred_logits, hidden_states, _ = self.classifier(X_tokens)
 
-        max_cls_hidden = torch.max(hidden_states[-1] + mask.unsqueeze(1), dim=1)[0].shape # (batch_size, hidden_dim)
+        # print("mask: ", mask.shape, mask.unsqueeze(1).shape)
+        # print("hiddenstates:", hidden_states[-1].shape)
+        max_cls_hidden = torch.max(hidden_states[-1].transpose(1, 2) + (1 - mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
+        # print("max cls hidden shape:", max_cls_hidden.shape)
         if self.fixed_classifier:
             max_cls_hidden = Variable(max_cls_hidden.data)
 
         word_embeddings = hidden_states[0]
 
         # _, cls_pred = torch.max(cls_pred_logits, dim=1) # (batch_size,)
-        cls_pred = torch.max(cls_pred_logits, dim=1)
+        _, cls_pred = torch.max(cls_pred_logits, dim=1)
 
         cls_lab_embeddings = self.lab_embed_layer(cls_pred) # (batch_size, lab_emb_dim)
         
@@ -311,13 +315,13 @@ class BertPreprocessor():
         else:
             self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
         
-        if model:
-            self.model = model
-        else:
-            self.model = BertModel.from_pretrained('bert-base-uncased')
-            self.model.cuda()
+        # if model:
+        #     self.model = model
+        # else:
+        #     self.model = BertModel.from_pretrained('bert-base-uncased')
+        #     self.model.cuda()
 
-        self.max_length = 50
+        self.max_length = max_length
         self.pad_to_max = True
 
         # self.init_weights()
@@ -387,7 +391,7 @@ class ThreePlayerModel(nn.Module):
         # initialize model components
         self.E_model = explainer(args)
         self.E_anti_model = anti_explainer(args)
-        self.C_model = classifier(args)
+        # self.C_model = classifier(args)
         self.generator = generator(args)
                     
         # Independent inputs: embeddings, num_labels
@@ -415,8 +419,9 @@ class ThreePlayerModel(nn.Module):
         self.opt_E_anti = torch.optim.Adam(filter(lambda x: x.requires_grad, self.E_anti_model.parameters()), lr=self.args.lr)
     
     def init_rl_optimizers(self):
-        self.opt_G_sup = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.parameters()), lr=self.args.lr)
-        self.opt_G_rl = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.parameters()), lr=self.args.lr * 0.1)
+        self.opt_G_sup = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.classifier.parameters()), lr=self.args.lr)
+        self.opt_G_rl = torch.optim.Adam(filter(lambda x: x.requires_grad,
+                [self.generator.Transformation.parameters(), self.generator.Generator.parameters()]), lr=self.args.lr * 0.1)
     
     def _generate_rationales(self, z_prob_):
         '''
@@ -490,6 +495,7 @@ class ThreePlayerModel(nn.Module):
         self.opt_E.zero_grad()
         self.opt_G_sup.zero_grad()
         self.opt_G_rl.zero_grad()
+        # self.generator.classifier.zero_grad()
         
         predict, anti_predict, cls_predict, z, neg_log_probs = self.forward(X_tokens, mask)
         
@@ -615,6 +621,8 @@ class ThreePlayerModel(nn.Module):
     def train_cls_one_step(self, X_tokens, label, X_mask):
  
         self.opt_G_sup.zero_grad()
+        self.generator.classifier.zero_grad()
+
 
         # X_tokens, X_mask = self.preprocessor.encode(X_text)
         # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
@@ -780,7 +788,7 @@ class ThreePlayerModel(nn.Module):
 
         return accuracy, anti_accuracy, sparsity
 
-    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=50):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=10, test_iteration=50):
         train_accs = []
         test_accs = []
         best_train_acc = 0.0
@@ -813,12 +821,13 @@ class ThreePlayerModel(nn.Module):
                 test_count = 0
 
                 for test_iter in range(len(df_test)//batch_size):
-                    test_batch = df_test.sample(batch_size) # TODO: originally used dev batch here?
+                    test_batch = df_test.iloc[test_iter*batch_size:(test_iter+1)*batch_size] # TODO: originally used dev batch here?
                     batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
 
                     # predict = self.forward_cls(batch_x_, batch_m_
-                    embeddings = self.preprocessor.embed(batch_x_)
-                    _, predict = self.generator(embeddings, batch_m_)
+                    # embeddings = self.preprocessor.embed(batch_x_)
+                    self.generator.classifier.eval()
+                    predict = self.generator.classifier(batch_x_, batch_m_)[0]
 
                     _, y_pred = torch.max(predict, dim=1)
 
@@ -901,15 +910,15 @@ class Argument():
     def __init__(self):
         self.model_type = 'RNN'
         self.cell_type = 'GRU'
-        self.hidden_dim = 200
-        self.embedding_dim = 100
+        self.hidden_dim = 768 # the hidden dim of the intermediate bert layers
+        self.embedding_dim = 768 # the dim of the embedded words
         self.kernel_size = 5
         self.layer_num = 1
         self.fine_tuning = False
         self.z_dim = 2
         self.gumbel_temprature = 0.1
         self.cuda = True
-        self.batch_size = 20
+        self.batch_size = 32
         self.mlp_hidden_dim = 50
         self.dropout_rate = 0.4
         self.use_relative_pos = True
@@ -959,8 +968,8 @@ if __name__=="__main__":
 
     glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
     COUNT_THRESH = 1
-    DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
-    # DATA_FOLDER = os.path.join("../../data/sst2/")
+    #DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
+    DATA_FOLDER = os.path.join("../../data/sst2/")
     LABEL_COL = "label"
     TEXT_COL = "sentence"
     TOKEN_CUTOFF = 70
@@ -1065,7 +1074,7 @@ if __name__=="__main__":
 
     # preprocess to generate tokens, masks, and token counts per training entry
     print("tokenizing and preprocessing training data...")
-    bp = BertPreprocessor()
+    bp = BertPreprocessor(max_length=20)
     input_ids, masks, counts = bp.encode(df_train[TEXT_COL])
     df_train_data = pd.DataFrame({"tokens": input_ids, "masks": masks, "counts": counts})
     print("tokenizing and preprocessing testing data...")
