@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 from tqdm import tqdm
 
+from transformers import BertModel, BertTokenizer, BertForSequenceClassification
 
 # classes needed for Rationale3Player
 class RnnModel(nn.Module):
@@ -96,6 +97,7 @@ class ClassifierModule(nn.Module):
         
         predict = self.predictor(max_hidden)
         return predict
+
 
 # (extra) classes needed for HardRationale
 class CnnModel(nn.Module):
@@ -248,36 +250,44 @@ class IntrospectionGeneratorModule(nn.Module):
         
         self.input_dim = args.embedding_dim
         self.NEG_INF = -1.0e6
-        self.lab_embed_layer = self._create_label_embed_layer() # should be shared with the Classifier_pred weights
+        # self.lab_embed_layer = self._create_label_embed_layer() # should be shared with the Classifier_pred weights
         
         # baseline classification model
-        self.Classifier_enc = RnnModel(args, self.input_dim)
-        self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
+        # self.Classifier_enc = RnnModel(args, self.input_dim)
+        # self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
+
+        self.classifier = BertForSequenceClassification.from_pretrained('bert-base-uncased')
         
         self.Transformation = nn.Sequential()
         self.Transformation.add_module('linear_layer', nn.Linear(self.hidden_dim + self.label_embedding_dim, self.hidden_dim // 2))
         self.Transformation.add_module('tanh_layer', nn.Tanh())
         self.Generator = DepGenerator(args, self.input_dim)
         
-        
-    def _create_label_embed_layer(self):
-        embed_layer = nn.Embedding(self.num_labels, self.label_embedding_dim)
-        embed_layer.weight.data.normal_(mean=0, std=0.1)
-        embed_layer.weight.requires_grad = True
-        return embed_layer
+    # def _create_label_embed_layer(self):
+    #     embed_layer = nn.Embedding(self.num_labels, self.label_embedding_dim)
+    #     embed_layer.weight.data.normal_(mean=0, std=0.1)
+    #     embed_layer.weight.requires_grad = True
+    #     return embed_layer
     
-    
-    def forward(self, word_embeddings, mask):
-        cls_hiddens = self.Classifier_enc(word_embeddings, mask) # (batch_size, hidden_dim, sequence_length)
-        max_cls_hidden = torch.max(cls_hiddens + (1 - mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
+    def forward(self, X_tokens, mask):
+        # cls_hiddens = self.Classifier_enc(word_embeddings, mask) # (batch_size, hidden_dim, sequence_length)
+        # max_cls_hidden = torch.max(cls_hiddens + (1 - mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
         
+        # if self.fixed_classifier:
+            # max_cls_hidden = Variable(max_cls_hidden.data)
+        
+        # cls_pred_logits = self.Classifier_pred(max_cls_hidden) # (batch_size, num_labels)
+        cls_pred_logits, hidden_states, _ = self.classifier(X_tokens)
+
+        max_cls_hidden = torch.max(hidden_states[-1] + mask.unsqueeze(1), dim=1)[0].shape # (batch_size, hidden_dim)
         if self.fixed_classifier:
             max_cls_hidden = Variable(max_cls_hidden.data)
-        
-        cls_pred_logits = self.Classifier_pred(max_cls_hidden) # (batch_size, num_labels)
-        
-        _, cls_pred = torch.max(cls_pred_logits, dim=1) # (batch_size,)
-        
+
+        word_embeddings = hidden_states[0]
+
+        # _, cls_pred = torch.max(cls_pred_logits, dim=1) # (batch_size,)
+        cls_pred = torch.max(cls_pred_logits, dim=1)
+
         cls_lab_embeddings = self.lab_embed_layer(cls_pred) # (batch_size, lab_emb_dim)
         
         init_h0 = self.Transformation(torch.cat([max_cls_hidden, cls_lab_embeddings], dim=1)) # (batch_size, hidden_dim / 2)
@@ -286,14 +296,64 @@ class IntrospectionGeneratorModule(nn.Module):
         z_scores_ = self.Generator(word_embeddings, h0=init_h0, mask=mask) #(batch_size, length, 2)
         z_scores_[:, :, 1] = z_scores_[:, :, 1] + (1 - mask) * self.NEG_INF
         
-        return z_scores_, cls_pred_logits
+        return z_scores_, cls_pred_logits, word_embeddings
+
+
+class BertPreprocessor():
+
+    def __init__(self, tokenizer = None, model = None, max_length = 50, pad_to_max = True):
+
+        # super(BertPreprocessor, self).__init__(config)
+        # self.num_labels = config.num_labels
+
+        if tokenizer:
+            self.tokenizer = tokenizer
+        else:
+            self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
+        
+        if model:
+            self.model = model
+        else:
+            self.model = BertModel.from_pretrained('bert-base-uncased')
+            self.model.cuda()
+
+        self.max_length = 50
+        self.pad_to_max = True
+
+        # self.init_weights()
+
+    def encode(self, X_text):
+        '''
+        turn text to tokens
+        X_text: batch_size * 1
+        '''
+        input_ids = []
+        attention_mask = []
+        counts = []
+        for text in X_text:
+            d = self.tokenizer.encode_plus(text, max_length = self.max_length, pad_to_max_length=self.pad_to_max)
+            input_ids.append(d['input_ids'])
+            attention_mask.append(d['attention_mask'])
+            counts.append(sum(d['attention_mask']))
+        
+        return input_ids, attention_mask, counts
+
+    # def embed(self, X_tokens, X_mask):
+    #     '''
+    #     turn tokens to embeddings
+    #     '''
+    #     #TODO: do we want with torch.no_grad():
+    #     #TODO: cuda?
+    #     embeddings = self.model(X_tokens, X_mask)[0]
+    #     return embeddings
+
 
 
 class ThreePlayerModel(nn.Module):
     """flattening the HardIntrospectionRationale3PlayerClassificationModel -> HardRationale3PlayerClassificationModel -> 
        Rationale3PlayerClassificationModel dependency structure from original paper code"""
 
-    def __init__(self, args, embeddings, num_labels, explainer=ClassifierModule, anti_explainer=ClassifierModule, generator=IntrospectionGeneratorModule, classifier=ClassifierModule):
+    def __init__(self, args, preprocessor, num_labels, explainer=ClassifierModule, anti_explainer=ClassifierModule, generator=IntrospectionGeneratorModule, classifier=ClassifierModule):
         """Initializes the model, including the explainer, anti-rationale explainer
         Args:
             args: 
@@ -331,10 +391,10 @@ class ThreePlayerModel(nn.Module):
         self.generator = generator(args)
                     
         # Independent inputs: embeddings, num_labels
-        self.vocab_size, self.embedding_dim = embeddings.shape
-        self.embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
-        self.embed_layer.weight.data = torch.from_numpy(embeddings)
-        self.embed_layer.weight.requires_grad = self.args.fine_tuning
+        # self.vocab_size, self.embedding_dim = embeddings.shape
+        # self.embed_layer = nn.Embedding(self.vocab_size, self.embedding_dim)
+        # self.embed_layer.weight.data = torch.from_numpy(embeddings)
+        # self.embed_layer.weight.requires_grad = self.args.fine_tuning
         self.num_labels = num_labels 
   
         # no internal code dependencies
@@ -346,6 +406,8 @@ class ThreePlayerModel(nn.Module):
         self.count_pieces = args.count_pieces
 
         self.fixed_classifier = args.fixed_classifier
+
+        self.preprocessor = preprocessor # should be something like bert model, run encoder.embed(X_text)
 
     # methods from Hardrationale3PlayerClassificationModel
     def init_optimizers(self): # not sure if this can be merged with initializer
@@ -422,14 +484,14 @@ class ThreePlayerModel(nn.Module):
 
         return continuity_loss, sparsity_loss
 
-    def train_one_step(self, x, label, baseline, mask):
+    def train_one_step(self, X_tokens, label, baseline, mask):
         # TODO: try to see whether removing the follows makes any differences
         self.opt_E_anti.zero_grad()
         self.opt_E.zero_grad()
         self.opt_G_sup.zero_grad()
         self.opt_G_rl.zero_grad()
         
-        predict, anti_predict, cls_predict, z, neg_log_probs = self.forward(x, mask)
+        predict, anti_predict, cls_predict, z, neg_log_probs = self.forward(X_tokens, mask)
         
         e_loss_anti = torch.mean(self.loss_func(anti_predict, label))
         
@@ -466,7 +528,7 @@ class ThreePlayerModel(nn.Module):
         
         return losses, predict, anti_predict, cls_predict, z, rewards, consistency_loss, continuity_loss, sparsity_loss
         
-    def forward(self, x, mask):
+    def forward(self, X_tokens, X_mask):
         """
         Inputs:
             x -- torch Variable in shape of (batch_size, length)
@@ -474,20 +536,22 @@ class ThreePlayerModel(nn.Module):
         Outputs:
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
-        """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        """
+        # X_tokens, X_mask = self.preprocessor.encode(X_text)
+        # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        # word_embeddings = self.preprocessor.embed(X_tokens, X_mask)
 
-        z_scores_, cls_predict = self.generator(word_embeddings, mask)
+        z_scores_, cls_predict, word_embeddings = self.generator(X_tokens, X_mask)
         
         z_probs_ = F.softmax(z_scores_, dim=-1)
         
-        z_probs_ = (mask.unsqueeze(-1) * ( (1 - self.exploration_rate) * z_probs_ + self.exploration_rate / z_probs_.size(-1) ) ) + ((1 - mask.unsqueeze(-1)) * z_probs_)
+        z_probs_ = (X_mask.unsqueeze(-1) * ( (1 - self.exploration_rate) * z_probs_ + self.exploration_rate / z_probs_.size(-1) ) ) + ((1 - X_mask.unsqueeze(-1)) * z_probs_)
         
         z, neg_log_probs = self._generate_rationales(z_probs_) #(batch_size, length)
         
-        predict = self.E_model(word_embeddings, z, mask)
+        predict = self.E_model(word_embeddings, z, X_mask)
         
-        anti_predict = self.E_anti_model(word_embeddings, 1 - z, mask)
+        anti_predict = self.E_anti_model(word_embeddings, 1 - z, X_mask)
 
         return predict, anti_predict, cls_predict, z, neg_log_probs
 
@@ -548,24 +612,26 @@ class ThreePlayerModel(nn.Module):
         return sup_loss, rl_loss, rewards, consistency_loss, continuity_loss, sparsity_loss
 
 
-    def train_cls_one_step(self, x, label, mask):
+    def train_cls_one_step(self, X_tokens, label, X_mask):
  
         self.opt_G_sup.zero_grad()
 
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        # X_tokens, X_mask = self.preprocessor.encode(X_text)
+        # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        # word_embeddings = self.preprocessor.embed(X_tokens, X_mask)
+
+        cls_predict_logits, _, _ = self.generator.classifier(X_tokens, X_mask) # (batch_size, hidden_dim, sequence_length)
+        # max_cls_hidden = torch.max(cls_hiddens + (1 - X_mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
+        # cls_predict = self.generator.Classifier_pred(max_cls_hidden)
         
-        cls_hiddens = self.generator.Classifier_enc(word_embeddings, mask) # (batch_size, hidden_dim, sequence_length)
-        max_cls_hidden = torch.max(cls_hiddens + (1 - mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
-        cls_predict = self.generator.Classifier_pred(max_cls_hidden)
-        
-        sup_loss = torch.mean(self.loss_func(cls_predict, label))
+        sup_loss = torch.mean(self.loss_func(cls_predict_logits, label))
         
         losses = {'g_sup_loss':sup_loss.cpu().data}
         
         sup_loss.backward()
         self.opt_G_sup.step()
         
-        return losses, cls_predict
+        return losses, cls_predict_logits
 
     def train_gen_one_step(self, x, label, mask):
         z_baseline = Variable(torch.FloatTensor([float(np.mean(self.z_history_rewards))]))
@@ -621,7 +687,7 @@ class ThreePlayerModel(nn.Module):
         # sort for rnn happiness
         batch.sort_values("counts", inplace=True, ascending=False)
         
-        x_mask = np.stack(batch["mask"], axis=0)
+        x_mask = np.stack(batch["masks"], axis=0)
         # drop all zero columns
         zero_col_idxs = np.argwhere(np.all(x_mask[...,:] == 0, axis=0))
         x_mask = np.delete(x_mask, zero_col_idxs, axis=1)
@@ -630,7 +696,7 @@ class ThreePlayerModel(nn.Module):
         # drop all zero columns
         x_mat = np.delete(x_mat, zero_col_idxs, axis=1)
 
-        y_vec = np.stack(batch["label"], axis=0)
+        y_vec = np.stack(batch[LABEL_COL], axis=0)
         
         batch_x_ = Variable(torch.from_numpy(x_mat)).to(torch.int64)
         batch_m_ = Variable(torch.from_numpy(x_mask)).type(torch.FloatTensor)
@@ -751,7 +817,7 @@ class ThreePlayerModel(nn.Module):
                     batch_x_, batch_m_, batch_y_ = self.generate_data(test_batch)
 
                     # predict = self.forward_cls(batch_x_, batch_m_
-                    embeddings = self.embed_layer(batch_x_)
+                    embeddings = self.preprocessor.embed(batch_x_)
                     _, predict = self.generator(embeddings, batch_m_)
 
                     _, y_pred = torch.max(predict, dim=1)
@@ -781,6 +847,7 @@ class ThreePlayerModel(nn.Module):
         old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
 
         current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
+
         if self.args.save_best_model:
             model_folder_path = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "training_run")
             os.mkdir(model_folder_path)
@@ -842,7 +909,7 @@ class Argument():
         self.z_dim = 2
         self.gumbel_temprature = 0.1
         self.cuda = True
-        self.batch_size = 40
+        self.batch_size = 20
         self.mlp_hidden_dim = 50
         self.dropout_rate = 0.4
         self.use_relative_pos = True
@@ -851,7 +918,7 @@ class Argument():
         self.fixed_classifier = True
         self.fixed_E_anti = True
         self.lambda_sparsity = 1.0
-        self.lambda_continuity = 1.0
+        self.lambda_continuity = 0.0
         self.lambda_anti = 1.0
         self.lambda_pos_reward = 0.1
         self.exploration_rate = 0.05
@@ -973,32 +1040,49 @@ if __name__=="__main__":
         return pd.DataFrame.from_dict(df_dict)
 
 
-    df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.train'))
+    # df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.train'))
+    # df_test = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test'))
+    # # TODO combine train and test dataset into df_all
+    # df_all = pd.concat([df_train, df_test])
+
+    # word_vocab, reverse_word_vocab, counts = build_vocab(df_all)
+    # embeddings = initial_embedding(word_vocab, 100, glove_path)
+
+    # # create training and testing labels
+    # y_train = df_train[LABEL_COL]
+    # y_test = df_test[LABEL_COL]
+
+    # # create training and testing inputs
+    # X_train = df_train[TEXT_COL]
+    # X_test = df_test[TEXT_COL]
+
+    # df_train = pd.concat([df_train, get_all_tokens_glove(X_train)], axis=1)
+    # df_test = pd.concat([df_test, get_all_tokens_glove(X_test)], axis=1)
+
+    print("loading data...")
+    df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test')) #TODO back to train after bug fixes
     df_test = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test'))
-    # TODO combine train and test dataset into df_all
-    df_all = pd.concat([df_train, df_test])
 
-    word_vocab, reverse_word_vocab, counts = build_vocab(df_all)
-    embeddings = initial_embedding(word_vocab, 100, glove_path)
+    # preprocess to generate tokens, masks, and token counts per training entry
+    print("tokenizing and preprocessing training data...")
+    bp = BertPreprocessor()
+    input_ids, masks, counts = bp.encode(df_train[TEXT_COL])
+    df_train_data = pd.DataFrame({"tokens": input_ids, "masks": masks, "counts": counts})
+    print("tokenizing and preprocessing testing data...")
+    input_ids, masks, counts = bp.encode(df_test[TEXT_COL])
+    df_test_data = pd.DataFrame({"tokens": input_ids, "masks": masks, "counts": counts})
 
-    # create training and testing labels
-    y_train = df_train[LABEL_COL]
-    y_test = df_test[LABEL_COL]
-
-    # create training and testing inputs
-    X_train = df_train[TEXT_COL]
-    X_test = df_test[TEXT_COL]
-
-    df_train = pd.concat([df_train, get_all_tokens_glove(X_train)], axis=1)
-    df_test = pd.concat([df_test, get_all_tokens_glove(X_test)], axis=1)
+    df_train = pd.concat([df_train, df_train_data], axis=1)
+    df_test = pd.concat([df_test, df_test_data], axis=1)
 
     # TODO: phase out use of args
     args = Argument()
     print(vars(args))
     # get embeddings, number of labels
-    classification_model = ThreePlayerModel(args, embeddings, num_labels)
+
+    classification_model = ThreePlayerModel(args, bp, num_labels)
     if args.cuda:
-        classification_model.cuda() 
+        classification_model.cuda()
     print(classification_model)
 
     # optionally pre train classifier
