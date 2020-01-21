@@ -256,7 +256,7 @@ class IntrospectionGeneratorModule(nn.Module):
         # self.Classifier_enc = RnnModel(args, self.input_dim)
         # self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
 
-        self.classifier = BertForSequenceClassification.from_pretrained('bert-base-uncased', output_hidden_states=True, output_attentions=True)
+        self.classifier = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels = 2, output_hidden_states=True, output_attentions=True)
         # self.Classifier_pred = nn.Linear(self.hidden_dim, self.num_labels)
 
         self.Transformation = nn.Sequential()
@@ -342,6 +342,14 @@ class BertPreprocessor():
         
         return input_ids, attention_mask, counts
 
+    def decode_single(self, id_list):
+        '''
+        id_list: a list of token ids
+        '''
+        return self.tokenizer.convert_ids_to_tokens(id_list)
+        
+
+
     # def embed(self, X_tokens, X_mask):
     #     '''
     #     turn tokens to embeddings
@@ -419,10 +427,19 @@ class ThreePlayerModel(nn.Module):
         self.opt_E_anti = torch.optim.Adam(filter(lambda x: x.requires_grad, self.E_anti_model.parameters()), lr=self.args.lr)
     
     def init_rl_optimizers(self):
-        self.opt_G_sup = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.classifier.parameters()), lr=self.args.lr)
-        self.opt_G_rl = torch.optim.Adam(filter(lambda x: x.requires_grad,
-                [self.generator.Transformation.parameters(), self.generator.Generator.parameters()]), lr=self.args.lr * 0.1)
+        print("num gen params:", len(list(self.generator.classifier.parameters())))
+        for name, param in self.generator.classifier.named_parameters():
+            if "bert.embeddings" in name or ("bert.encoder" in name and "layer.11" not in name):
+                param.requires_grad = False
+            print(name, param.requires_grad)
+        
+        self.opt_G_sup = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.classifier.parameters())) #TODO twiddle around with learning rate?
+        self.opt_G_rl = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.parameters()), lr=self.args.lr * 0.1)
     
+    def freeze_gen_classifier(self):
+        for name, param in self.generator.classifier.named_parameters():
+            param.requires_grad = False
+
     def _generate_rationales(self, z_prob_):
         '''
         Input:
@@ -515,11 +532,11 @@ class ThreePlayerModel(nn.Module):
         losses = {'e_loss':e_loss.cpu().data, 'e_loss_anti':e_loss_anti.cpu().data,
                  'g_sup_loss':g_sup_loss.cpu().data, 'g_rl_loss':g_rl_loss.cpu().data}
         
-        e_loss_anti.backward()
+        e_loss_anti.backward(retain_graph=True)
         self.opt_E_anti.step()
         self.opt_E_anti.zero_grad()
         
-        e_loss.backward()
+        e_loss.backward(retain_graph=True)
         self.opt_E.step()
         self.opt_E.zero_grad()
         
@@ -528,7 +545,7 @@ class ThreePlayerModel(nn.Module):
             self.opt_G_sup.step()
             self.opt_G_sup.zero_grad()
 
-        g_rl_loss.backward()
+        g_rl_loss.backward(retain_graph=True)
         self.opt_G_rl.step()
         self.opt_G_rl.zero_grad()
         
@@ -623,7 +640,6 @@ class ThreePlayerModel(nn.Module):
         self.opt_G_sup.zero_grad()
         self.generator.classifier.zero_grad()
 
-
         # X_tokens, X_mask = self.preprocessor.encode(X_text)
         # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
         # word_embeddings = self.preprocessor.embed(X_tokens, X_mask)
@@ -637,6 +653,11 @@ class ThreePlayerModel(nn.Module):
         losses = {'g_sup_loss':sup_loss.cpu().data}
         
         sup_loss.backward()
+
+        # Clip the norm of the gradients to 1.0.
+        # This is to help prevent the "exploding gradients" problem.
+        torch.nn.utils.clip_grad_norm_(self.generator.parameters(), 1.0)
+
         self.opt_G_sup.step()
         
         return losses, cls_predict_logits
@@ -737,7 +758,7 @@ class ThreePlayerModel(nn.Module):
     def display_example(self, x, m, z):
         seq_len = int(m.sum().item())
         ids = x[:seq_len]
-        tokens = self.convert_ids_to_tokens_glove(ids)
+        tokens = self.preprocessor.decode_single(ids)
 
         final = ""
         for i in range(len(tokens)):
@@ -749,6 +770,9 @@ class ThreePlayerModel(nn.Module):
         print(final)
 
     def convert_ids_to_tokens_glove(self, ids):
+        return [reverse_word_vocab[i.item()] for i in ids]
+
+    def convert_ids_to_tokens_bert(self, ids):
         return [reverse_word_vocab[i.item()] for i in ids]
 
     def test(self, df_test):
@@ -788,7 +812,7 @@ class ThreePlayerModel(nn.Module):
 
         return accuracy, anti_accuracy, sparsity
 
-    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=10, test_iteration=50):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=100):
         train_accs = []
         test_accs = []
         best_train_acc = 0.0
@@ -797,7 +821,7 @@ class ThreePlayerModel(nn.Module):
         self.init_rl_optimizers()
 
         for i in tqdm(range(num_iteration)):
-            self.train() # pytorch fn; sets module to train mode
+            self.generator.classifier.train() # pytorch fn; sets module to train mode
 
             # sample a batch of data
             batch = df_train.sample(batch_size, replace=True)
@@ -857,6 +881,10 @@ class ThreePlayerModel(nn.Module):
 
         current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
 
+        if self.args.fixed_classifier:
+            print("freezing generator classifier.")
+            self.freeze_gen_classifier()
+
         if self.args.save_best_model:
             model_folder_path = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "training_run")
             os.mkdir(model_folder_path)
@@ -881,14 +909,14 @@ class ThreePlayerModel(nn.Module):
 
             # calculate classification accuarcy
             _, y_pred = torch.max(predict, dim=1)
-
             acc = np.float((y_pred == batch_y_).sum().cpu().data.item()) / args.batch_size
             train_accs.append(acc)
 
             if i % test_iteration == 0:
-                avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
-                print("\nAvg. train accuracy: ", avg_train_acc)
+                # avg_train_acc = sum(train_accs[len(train_accs) - 20: len(train_accs)]) / 20
+                print("\Avg train accuracy: ", sum(train_accs[len(train_accs)-10:len(train_accs)])/10)
                 test_acc, test_anti_acc, test_sparsity = self.test(df_test)
+                print('supervised_loss: %.4f, sparsity_loss: %.4f, continuity_loss: %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
                 if test_acc > best_test_acc:
                     if self.args.save_best_model:
                         print("saving best model and model stats")
@@ -899,7 +927,7 @@ class ThreePlayerModel(nn.Module):
                         logging.info('best model at time ' + current_datetime)
                         logging.info('sparsity lambda: %.4f'%(self.args.lambda_sparsity))
                         logging.info('highlight percentage: %.4f'%(self.args.highlight_percentage))
-                        logging.info('last train acc: %.4f, avg train acc: %.4f'%(train_accs[-1], avg_train_acc))
+                        logging.info('last train acc: %.4f'%(train_accs[-1]))
                         logging.info('last test acc: %.4f, previous best test acc: %.4f, last anti test acc: %.4f'%(test_acc,  best_test_acc, test_anti_acc))
                         logging.info('last test sparsity: %.4f'%test_sparsity)
                         logging.info('supervised_loss: %.4f, sparsity_loss: %.4f, continuity_loss: %.4f'%(losses['e_loss'], torch.mean(sparsity_loss).cpu().data, torch.mean(continuity_loss).cpu().data))
@@ -918,7 +946,7 @@ class Argument():
         self.z_dim = 2
         self.gumbel_temprature = 0.1
         self.cuda = True
-        self.batch_size = 32
+        self.batch_size = 20
         self.mlp_hidden_dim = 50
         self.dropout_rate = 0.4
         self.use_relative_pos = True
@@ -948,7 +976,7 @@ class Argument():
         self.pre_trained_model_prefix = 'pre_trained_cls.model'
         self.save_path = os.path.join("..", "models")
         self.model_prefix = "sst2rnpmodel"
-        self.save_best_model = True
+        self.save_best_model = False
         self.num_labels = 2
         self.pre_train_cls = True
 
@@ -957,7 +985,6 @@ if __name__=="__main__":
     # procedure from run_sst2_rationale.py
     # training params
     use_cuda = torch.cuda.is_available()
-    batch_size = 40
     load_pre_cls = False
     pre_trained_model_prefix = 'pre_trained_cls.model'
     save_path = os.path.join("..", "models")
@@ -966,13 +993,13 @@ if __name__=="__main__":
     pre_train_cls = True
     num_labels = 2
 
-    glove_path = os.path.join("..", "datasets", "glove.6B.100d.txt")
+    glove_path = os.path.join("..", "datasets", "hiloglove.6B.100d.txt")
     COUNT_THRESH = 1
     #DATA_FOLDER = os.path.join("../../sentiment_dataset/data/")
-    DATA_FOLDER = os.path.join("../../data/sst2/")
+    DATA_FOLDER = os.path.join("../datasets/sst2/")
     LABEL_COL = "label"
     TEXT_COL = "sentence"
-    TOKEN_CUTOFF = 70
+    TOKEN_CUTOFF = 50
 
     def generate_tokens_glove(word_vocab, text):
         indexed_text = [word_vocab[word] if (counts[word] > COUNT_THRESH) else word_vocab["<UNK>"] for word in text.split()]
@@ -1069,17 +1096,19 @@ if __name__=="__main__":
     # df_test = pd.concat([df_test, get_all_tokens_glove(X_test)], axis=1)
 
     print("loading data...")
-    df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test')) #TODO back to train after bug fixes
+    df_train = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.train')) #TODO back to train after bug fixes
     df_test = load_data(os.path.join(DATA_FOLDER, 'stsa.binary.test'))
 
     # preprocess to generate tokens, masks, and token counts per training entry
     print("tokenizing and preprocessing training data...")
-    bp = BertPreprocessor(max_length=20)
+    bp = BertPreprocessor(max_length=TOKEN_CUTOFF)
     input_ids, masks, counts = bp.encode(df_train[TEXT_COL])
     df_train_data = pd.DataFrame({"tokens": input_ids, "masks": masks, "counts": counts})
+    print(len(df_train_data), " training samples.")
     print("tokenizing and preprocessing testing data...")
     input_ids, masks, counts = bp.encode(df_test[TEXT_COL])
     df_test_data = pd.DataFrame({"tokens": input_ids, "masks": masks, "counts": counts})
+    print(len(df_test_data), " testing samples.")
 
     df_train = pd.concat([df_train, df_train_data], axis=1)
     df_test = pd.concat([df_test, df_test_data], axis=1)
@@ -1097,7 +1126,7 @@ if __name__=="__main__":
     # optionally pre train classifier
     if args.pre_train_cls:
         print('pre-training the classifier')
-        classification_model.pretrain_classifier(df_train, df_test, batch_size)
+        classification_model.pretrain_classifier(df_train, df_test, args.batch_size)
 
     # train the model
-    classification_model.fit(df_train, df_test, batch_size)
+    classification_model.fit(df_train, df_test, args.batch_size)
