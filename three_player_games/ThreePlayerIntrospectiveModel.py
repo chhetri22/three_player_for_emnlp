@@ -278,7 +278,7 @@ class IntrospectionGeneratorModule(nn.Module):
             # max_cls_hidden = Variable(max_cls_hidden.data)
         
         # cls_pred_logits = self.Classifier_pred(max_cls_hidden) # (batch_size, num_labels)
-        cls_pred_logits, hidden_states, _ = self.classifier(X_tokens)
+        cls_pred_logits, hidden_states, _ = self.classifier(X_tokens, attention_mask=mask)
 
         # print("mask: ", mask.shape, mask.unsqueeze(1).shape)
         # print("hiddenstates:", hidden_states[-1].shape)
@@ -397,8 +397,8 @@ class ThreePlayerModel(nn.Module):
         self.z_history_rewards = deque([0], maxlen=200)
 
         # initialize model components
-        self.E_model = explainer(args)
-        self.E_anti_model = anti_explainer(args)
+        self.E_model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels = 2, output_hidden_states=False, output_attentions=False)
+        self.E_anti_model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels = 2, output_hidden_states=False, output_attentions=False)
         # self.C_model = classifier(args)
         self.generator = generator(args)
                     
@@ -423,22 +423,32 @@ class ThreePlayerModel(nn.Module):
 
     # methods from Hardrationale3PlayerClassificationModel
     def init_optimizers(self): # not sure if this can be merged with initializer
+        self.freeze_bert_classifier(self.E_model, entire=False)
+        self.freeze_bert_classifier(self.E_anti_model, entire=False)
+
         self.opt_E = torch.optim.Adam(filter(lambda x: x.requires_grad, self.E_model.parameters()), lr=self.args.lr)
         self.opt_E_anti = torch.optim.Adam(filter(lambda x: x.requires_grad, self.E_anti_model.parameters()), lr=self.args.lr)
     
     def init_rl_optimizers(self):
-        print("num gen params:", len(list(self.generator.classifier.parameters())))
-        for name, param in self.generator.classifier.named_parameters():
-            if "bert.embeddings" in name or ("bert.encoder" in name and "layer.11" not in name):
-                param.requires_grad = False
-            print(name, param.requires_grad)
+        print("num gen classifier params:", len(list(self.generator.classifier.parameters())))
+        print("num gen params:", len(list(self.generator.parameters())))
+        self.freeze_bert_classifier(self.generator.classifier, entire=False)
+        # for name, param in self.generator.classifier.named_parameters():
+        #     if "bert.embeddings" in name or ("bert.encoder" in name and "layer.11" not in name):
+        #         param.requires_grad = False
+        #     print(name, param.requires_grad)
         
         self.opt_G_sup = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.classifier.parameters())) #TODO twiddle around with learning rate?
         self.opt_G_rl = torch.optim.Adam(filter(lambda x: x.requires_grad, self.generator.parameters()), lr=self.args.lr * 0.1)
     
-    def freeze_gen_classifier(self):
-        for name, param in self.generator.classifier.named_parameters():
-            param.requires_grad = False
+    def freeze_bert_classifier(self, classifier, entire=False):
+        if entire:
+            for name, param in classifier.named_parameters():
+                param.requires_grad = False
+        else:
+            for name, param in classifier.named_parameters():
+                if "bert.embeddings" in name or ("bert.encoder" in name and "layer.11" not in name):
+                    param.requires_grad = False
 
     def _generate_rationales(self, z_prob_):
         '''
@@ -515,7 +525,6 @@ class ThreePlayerModel(nn.Module):
         # self.generator.classifier.zero_grad()
         
         predict, anti_predict, cls_predict, z, neg_log_probs = self.forward(X_tokens, mask)
-        
         e_loss_anti = torch.mean(self.loss_func(anti_predict, label))
         
 #         e_loss = torch.mean(self.loss_func(predict, label))
@@ -572,9 +581,16 @@ class ThreePlayerModel(nn.Module):
         
         z, neg_log_probs = self._generate_rationales(z_probs_) #(batch_size, length)
         
-        predict = self.E_model(word_embeddings, z, X_mask)
-        
-        anti_predict = self.E_anti_model(word_embeddings, 1 - z, X_mask)
+        # masked_input = X_tokens * z.unsqueeze(-1)
+
+        # print("shapes:", masked_input.shape, X_mask.shape)
+
+        predict = self.E_model(X_tokens, attention_mask=z)[0] # the first output are the logits
+        # print(predict.shape)
+        # print(predict)
+
+        # anti_masked_input = word_embeddings * (1-z).unsqueeze(-1)
+        anti_predict = self.E_anti_model(X_tokens, attention_mask=(1-z))[0]
 
         return predict, anti_predict, cls_predict, z, neg_log_probs
 
@@ -643,8 +659,7 @@ class ThreePlayerModel(nn.Module):
         # X_tokens, X_mask = self.preprocessor.encode(X_text)
         # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
         # word_embeddings = self.preprocessor.embed(X_tokens, X_mask)
-
-        cls_predict_logits, _, _ = self.generator.classifier(X_tokens, X_mask) # (batch_size, hidden_dim, sequence_length)
+        cls_predict_logits, _, _ = self.generator.classifier(X_tokens, attention_mask=X_mask) # (batch_size, hidden_dim, sequence_length)
         # max_cls_hidden = torch.max(cls_hiddens + (1 - X_mask).unsqueeze(1) * self.NEG_INF, dim=2)[0] # (batch_size, hidden_dim)
         # cls_predict = self.generator.Classifier_pred(max_cls_hidden)
         
@@ -702,11 +717,12 @@ class ThreePlayerModel(nn.Module):
             predict -- (batch_size, num_label)
             z -- rationale (batch_size, length)
         """        
-        word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
+        # word_embeddings = self.embed_layer(x) #(batch_size, length, embedding_dim)
         
         z = torch.ones_like(x).type(torch.cuda.FloatTensor)
+        # masked_input = word_embeddings * z.unsqueeze(-1)
         
-        predict = self.E_model(word_embeddings, z, mask)
+        predict = self.E_model(X_tokens, attention_mask=z)
 
         return predict
 
@@ -812,7 +828,7 @@ class ThreePlayerModel(nn.Module):
 
         return accuracy, anti_accuracy, sparsity
 
-    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=2000, test_iteration=100):
+    def pretrain_classifier(self, df_train, df_test, batch_size, num_iteration=1000, test_iteration=100):
         train_accs = []
         test_accs = []
         best_train_acc = 0.0
@@ -877,13 +893,13 @@ class ThreePlayerModel(nn.Module):
         
         self.init_optimizers()
         self.init_rl_optimizers()
-        old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy()
+        # old_E_anti_weights = self.E_anti_model.predictor._parameters['weight'][0].cpu().data.numpy() #TODO remove? this is never used!
 
         current_datetime = datetime.now().strftime("%m_%d_%y_%H_%M_%S")
 
         if self.args.fixed_classifier:
             print("freezing generator classifier.")
-            self.freeze_gen_classifier()
+            self.freeze_bert_classifier(self.generator.classifier, entire=True)
 
         if self.args.save_best_model:
             model_folder_path = os.path.join(self.args.save_path, self.args.model_prefix + current_datetime + "training_run")
